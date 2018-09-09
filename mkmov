@@ -1,0 +1,1 @@
+avconv -r 24 -f image2 -i fig/vort/%010d.png -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" -vcodec libx264 -crf 18 -pix_fmt yuv420p -y vort.mp4
