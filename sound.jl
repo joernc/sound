@@ -8,10 +8,9 @@
 
 @everywhere using Printf
 @everywhere using HDF5
-@everywhere using PyPlot
 
-# grid spacing (domain size: 2pi)
-@everywhere const h = 2pi/1024
+# grid spacing (domain width 2π)
+@everywhere const h = 2π/1024
 
 # sound speed
 @everywhere const c = 1.
@@ -23,10 +22,10 @@
 @everywhere const dt = h/c
 
 # viscosity
-@everywhere const nu = 2e-5
+@everywhere const ν = 2e-5
 
 # parameter for diffusion
-@everywhere const alp = nu/(c*h)
+@everywhere const α = ν/(c*h)
 
 @everywhere function exchangex!(a, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
   # send edges
@@ -49,71 +48,72 @@ end
 end
 
 #"""Sound wave split (x-direction)"""
-@everywhere function Sx(u, p, maskx, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
+@everywhere function Sx(u, ϕ, maskx, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
   nx, ny = size(u)
   up = Array{Float64, 2}(undef, nx, ny)
-  pp = Array{Float64, 2}(undef, nx, ny)
+  ϕp = Array{Float64, 2}(undef, nx, ny)
   for i = 2:nx-1
     for j = 1:ny
       if maskx[i,j] == 1 # interior
-	up[i,j] = (u[i-1,j] + u[i+1,j])/2 + (p[i-1,j] - p[i+1,j])/2c
-	pp[i,j] = (p[i-1,j] + p[i+1,j])/2 + c/2*(u[i-1,j] - u[i+1,j])
+	up[i,j] = (u[i-1,j] + u[i+1,j])/2 + (ϕ[i-1,j] - ϕ[i+1,j])/2c
+	ϕp[i,j] = (ϕ[i-1,j] + ϕ[i+1,j])/2 + c/2*(u[i-1,j] - u[i+1,j])
       elseif maskx[i,j] == 2 # western boundary
 	up[i,j] = 0.
-	pp[i,j] = p[i+1,j] - c*u[i+1,j]
+	ϕp[i,j] = ϕ[i+1,j] - c*u[i+1,j]
       elseif maskx[i,j] == 3 # eastern boundary
 	up[i,j] = 0.
-	pp[i,j] = p[i-1,j] + c*u[i-1,j]
+	ϕp[i,j] = ϕ[i-1,j] + c*u[i-1,j]
       else
 	up[i,j] = u[i,j]
-	pp[i,j] = p[i,j]
+	ϕp[i,j] = ϕ[i,j]
       end
     end
   end
   exchangex!(up, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
-  exchangex!(pp, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
-  return up, pp
+  exchangex!(ϕp, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
+  return up, ϕp
 end
 
 #"""Sound wave split (y-direction)"""
-@everywhere function Sy(v, p, masky, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
+@everywhere function Sy(v, ϕ, masky, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
   nx, ny = size(v)
   vp = Array{Float64, 2}(undef, nx, ny)
-  pp = Array{Float64, 2}(undef, nx, ny)
+  ϕp = Array{Float64, 2}(undef, nx, ny)
   for i = 1:nx
     for j = 2:ny-1
       if masky[i,j] == 1 # interior
-	vp[i,j] = (v[i,j-1] + v[i,j+1])/2 + (p[i,j-1] - p[i,j+1])/2c
-	pp[i,j] = (p[i,j-1] + p[i,j+1])/2 + c/2*(v[i,j-1] - v[i,j+1])
+	vp[i,j] = (v[i,j-1] + v[i,j+1])/2 + (ϕ[i,j-1] - ϕ[i,j+1])/2c
+	ϕp[i,j] = (ϕ[i,j-1] + ϕ[i,j+1])/2 + c/2*(v[i,j-1] - v[i,j+1])
       elseif masky[i,j] == 2 # south boundary
 	vp[i,j] = 0.
-	pp[i,j] = p[i,j+1] - c*v[i,j+1]
+	ϕp[i,j] = ϕ[i,j+1] - c*v[i,j+1]
       elseif masky[i,j] == 3 # north boundary
 	vp[i,j] = 0.
-	pp[i,j] = p[i,j-1] + c*v[i,j-1]
+	ϕp[i,j] = ϕ[i,j-1] + c*v[i,j-1]
       else
 	vp[i,j] = v[i,j]
-	pp[i,j] = p[i,j]
+	ϕp[i,j] = ϕ[i,j]
       end
     end
   end
   exchangey!(vp, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
-  exchangey!(pp, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
-  return vp, pp
+  exchangey!(ϕp, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
+  return vp, ϕp
 end
 
 #"""Rotation split"""
-@everywhere function Rz(u, v, p, maski, channel_send_west, channel_send_east, channel_send_south, channel_send_north, channel_receive_west, channel_receive_east, channel_receive_south, channel_receive_north)
+@everywhere function Rz(u, v, ϕ, maski, channel_send_west, channel_send_east, channel_send_south, channel_send_north,
+			channel_receive_west, channel_receive_east, channel_receive_south, channel_receive_north)
   nx, ny = size(u)
   up = Array{Float64, 2}(undef, nx, ny)
   vp = Array{Float64, 2}(undef, nx, ny)
   for i = 2:nx-1
     for j = 2:ny-1
       if maski[i,j] # interior
-        omgz = f + (v[i+1,j] - v[i-1,j] - u[i,j+1] + u[i,j-1]) / 2h
-        gam = dt*omgz*c^2/p[i,j]
-        Cz = (1 - gam.^2/4)/(1 + gam^2/4)
-        Sz = gam/(1 + gam^2/4)
+        ωz = f + (v[i+1,j] - v[i-1,j] - u[i,j+1] + u[i,j-1]) / 2h
+        γ = dt*ωz*c^2/ϕ[i,j]
+        Cz = (1 - γ.^2/4)/(1 + γ^2/4)
+        Sz = γ/(1 + γ^2/4)
         up[i,j] = u[i,j]*Cz + v[i,j]*Sz
 	vp[i,j] = v[i,j]*Cz - u[i,j]*Sz
       else # boundary or solid
@@ -142,7 +142,7 @@ end
   for i = 2:nx-1
     for j = 2:ny-1
       if maski[i,j]
-	ap[i,j] = (1-4alp)*a[i,j] + alp*(a[i-1,j] + a[i+1,j] + a[i,j-1] + a[i,j+1])
+	ap[i,j] = (1-4α)*a[i,j] + α*(a[i-1,j] + a[i+1,j] + a[i,j-1] + a[i,j+1])
       else
 	ap[i,j] = a[i,j]
       end
@@ -155,7 +155,7 @@ end
 
 #"""Boundary masks (see Fig. 1 in Salmon for a sketch)"""
 @everywhere function boundary_masks(fluid, channel_send_west, channel_send_east, channel_send_south, channel_send_north,
-    channel_receive_west, channel_receive_east, channel_receive_south, channel_receive_north)
+				    channel_receive_west, channel_receive_east, channel_receive_south, channel_receive_north)
   nx, ny = size(fluid)
   maskx = zeros(UInt8, nx, ny)
   masky = zeros(UInt8, nx, ny)
@@ -192,83 +192,90 @@ end
 end
 
 @everywhere function read_topo(irange, jrange, channel_send_west, channel_send_east, channel_send_south, channel_send_north,
-    channel_receive_west, channel_receive_east, channel_receive_south, channel_receive_north)
+			       channel_receive_west, channel_receive_east, channel_receive_south, channel_receive_north)
+  # tile size plus two points padding
   nx = length(irange) + 2
   ny = length(jrange) + 2
-  fluid = Array{Bool}(undef, nx, ny)
+  # read from file
   full_mask = h5read("julia_512_1024.h5", "m") .> .5
+  # add solid boundary at top
   full_mask[:,end] .= false
+  # assign to tile
+  fluid = Array{Bool}(undef, nx, ny)
   fluid[2:nx-1,2:ny-1] = full_mask[irange,jrange]
+  # exchange edges
   exchangex!(fluid, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
   exchangey!(fluid, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
-  return boundary_masks(fluid, channel_send_west, channel_send_east, channel_send_south, channel_send_north, channel_receive_west,
-      channel_receive_east, channel_receive_south, channel_receive_north)
+  # interior, x-, and y-masks
+  maski, maskx, masky = boundary_masks(fluid, channel_send_west, channel_send_east, channel_send_south, channel_send_north,
+				       channel_receive_west, channel_receive_east, channel_receive_south, channel_receive_north)
+  return maski, maskx, masky
 end
 
 @everywhere function run_tile(i, j, irange, jrange, steps, channel_send_west, channel_send_east, channel_send_south,
-    channel_send_north, channel_receive_west, channel_receive_east, channel_receive_south, channel_receive_north)
+			      channel_send_north, channel_receive_west, channel_receive_east, channel_receive_south,
+			      channel_receive_north)
   # read topography mask
-  maski, maskx, masky = read_topo(irange, jrange, channel_send_west, channel_send_east, channel_send_south, channel_send_north, 
-      channel_receive_west, channel_receive_east, channel_receive_south, channel_receive_north)
+  maski, maskx, masky = read_topo(irange, jrange, channel_send_west, channel_send_east, channel_send_south, channel_send_north,
+				  channel_receive_west, channel_receive_east, channel_receive_south, channel_receive_north)
   # initialization
   nx = length(irange) + 2
   ny = length(jrange) + 2
   u = zeros(nx, ny)
   v = zeros(nx, ny)
-  p = c^2*ones(nx, ny)
+  ϕ = c^2*ones(nx, ny)
   u[(maskx.==0).&(masky.==0)] .= 0
   v[(maskx.==0).&(masky.==0)] .= 0
-  p[(maskx.==0).&(masky.==0)] .= 0
+  ϕ[(maskx.==0).&(masky.==0)] .= 0
   # time steps
   for k = 1:steps
     if k % 100 == 1
       println(k-1)
       # vorticity
-      omgz = f .+ (v[3:nx,2:ny-1] - v[1:nx-2,2:ny-1] - u[2:nx-1,3:ny] + u[2:nx-1,1:ny-2]) / 2h
-      omgz[.!maski[2:nx-1,2:ny-1]] .= NaN
+      ωz = f .+ (v[3:nx,2:ny-1] - v[1:nx-2,2:ny-1] - u[2:nx-1,3:ny] + u[2:nx-1,1:ny-2])/2h
+      ωz[.!maski[2:nx-1,2:ny-1]] .= NaN
       # save image
-      m = maximum(abs.(omgz[.!isnan.(omgz)]))
-      imsave(@sprintf("sound/fig/%1d_%1d_%010d.png", i, j, k-1), Array(omgz'), origin="lower", vmin=-m, vmax=m)
+      m = maximum(abs.(ωz[.!isnan.(ωz)]))
       # save data
       open(@sprintf("sound/data/%1d_%1d_%010d", i, j, k-1), "w") do file
-	write(file, omgz)
+	write(file, ωz)
       end
     end
     # Dxy steps
     u = Dxy(u, maski, channel_send_west, channel_send_east, channel_send_south, channel_send_north, channel_receive_west,
-        channel_receive_east, channel_receive_south, channel_receive_north)
+	    channel_receive_east, channel_receive_south, channel_receive_north)
     v = Dxy(v, maski, channel_send_west, channel_send_east, channel_send_south, channel_send_north, channel_receive_west,
-        channel_receive_east, channel_receive_south, channel_receive_north)
+	    channel_receive_east, channel_receive_south, channel_receive_north)
     # Sx step
-    u, p = Sx(u, p, maskx, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
+    u, ϕ = Sx(u, ϕ, maskx, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
     # Sy step
-    v, p = Sy(v, p, masky, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
+    v, ϕ = Sy(v, ϕ, masky, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
     # Rz step
-    u, v = Rz(u, v, p, maski, channel_send_west, channel_send_east, channel_send_south, channel_send_north, channel_receive_west,
+    u, v = Rz(u, v, ϕ, maski, channel_send_west, channel_send_east, channel_send_south, channel_send_north, channel_receive_west,
         channel_receive_east, channel_receive_south, channel_receive_north)
     # forcing
     forcing!((2k+.5)*dt, u, maski)
     # forcing
     forcing!((2k+1.5)*dt, u, maski)
     # Rz step
-    u, v = Rz(u, v, p, maski, channel_send_west, channel_send_east, channel_send_south, channel_send_north, channel_receive_west,
-        channel_receive_east, channel_receive_south, channel_receive_north)
+    u, v = Rz(u, v, ϕ, maski, channel_send_west, channel_send_east, channel_send_south, channel_send_north, channel_receive_west,
+	      channel_receive_east, channel_receive_south, channel_receive_north)
     # Sy step
-    v, p = Sy(v, p, masky, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
+    v, ϕ = Sy(v, ϕ, masky, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
     # Sx step
-    u, p = Sx(u, p, maskx, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
+    u, ϕ = Sx(u, ϕ, maskx, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
     # Dxy steps
     u = Dxy(u, maski, channel_send_west, channel_send_east, channel_send_south, channel_send_north, channel_receive_west,
-        channel_receive_east, channel_receive_south, channel_receive_north)
+	    channel_receive_east, channel_receive_south, channel_receive_north)
     v = Dxy(v, maski, channel_send_west, channel_send_east, channel_send_south, channel_send_north, channel_receive_west,
-        channel_receive_east, channel_receive_south, channel_receive_north)
+	    channel_receive_east, channel_receive_south, channel_receive_north)
   end
   return
 end
 
 # get index ranges for tiles
-tile_range(i, j, tile_sizes) = sum(tile_sizes[1][1:i-1])+1:sum(tile_sizes[1][1:i]),
-    sum(tile_sizes[2][1:j-1])+1:sum(tile_sizes[2][1:j])
+tile_range(i, j, tile_sizes) = [sum(tile_sizes[1][1:i-1])+1:sum(tile_sizes[1][1:i]),
+				sum(tile_sizes[2][1:j-1])+1:sum(tile_sizes[2][1:j])]
 
 function run_model(steps, tile_sizes)
   # number of tiles
@@ -287,32 +294,14 @@ function run_model(steps, tile_sizes)
       p = workers()[mod1((i-1)*nj+j, nprocs()-1)]
       println(p, ": ", i, " ", j, " ", irange, " ", jrange)
       a[i,j] = @spawnat p run_tile(i, j, irange, jrange, steps, channels_west[i,j], channels_east[i,j], channels_south[i,j],
-          channels_north[i,j], channels_east[mod1(i-1,ni),j], channels_west[mod1(i+1,ni),j], channels_north[i,mod1(j-1,nj)],
-          channels_south[i,mod1(j+1,nj)])
+				   channels_north[i,j], channels_east[mod1(i-1,ni),j], channels_west[mod1(i+1,ni),j],
+				   channels_north[i,mod1(j-1,nj)], channels_south[i,mod1(j+1,nj)])
     end
   end
-  # wait for retult
+  # wait for result
   for i in 1:ni
     for j in 1:nj
       wait(a[i,j])
-    end
-  end
-  # assemble and plot results
-  for k in 1:steps
-    if k % 100 == 1
-      println(k-1)
-      u = Array{Float64}(undef, sum(tile_sizes[1]), sum(tile_sizes[2]))
-      for i in 1:ni
-	for j in 1:nj
-	  irange, jrange = tile_range(i, j, tile_sizes)
-	  open(@sprintf("sound/data2/%1d_%1d_%010d", i, j, k-1), "r") do file
-	    u[irange,jrange] = [read(file, Float64) for ii in irange, jj in jrange]
-	  end
-	end
-      end
-      #m = maximum(abs.(u[.!isnan.(u)]))
-      m = .5
-      imsave(@sprintf("sound/fig2/%010d.png", k-1), Array(u'), origin="lower", vmin=-m, vmax=m)
     end
   end
 end
