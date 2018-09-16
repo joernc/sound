@@ -21,7 +21,7 @@ function assemble(steps, tile_sizes)
       end
     end
     #m = maximum(abs.(u[.!isnan.(u)]))
-    m = .5
-    imsave(@sprintf("sound/fig/%010d.png", k), Array(u'), origin="lower", vmin=-m, vmax=m, cmap="RdBu_r")
+    #imsave(@sprintf("sound/fig/%010d.png", k), Array(u'), origin="lower", vmin=-m, vmax=m, cmap="RdBu_r")
+    imsave(@sprintf("sound/fig/%010d.png", k), Array(u'), origin="lower", vmin=-.005/2π, vmax=.005/2π)
   end
 end

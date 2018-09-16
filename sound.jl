@@ -1,10 +1,10 @@
 # Implementation of Rick Salmon's "An Ocean Circulation Model Based on Operator-Splitting, Hamiltonian Brackets, and the Inclusion of Sound Waves" (JPO, 2009)
 
 # next steps:
-# - add buoyancy
 # - extend to third dimension
 # - organize channels better
 # - type annotations for better performance?
+# - allow specification of flux BC
 
 @everywhere using Printf
 @everywhere using HDF5
@@ -19,13 +19,13 @@
 @everywhere const f = 0.
 
 # time step
-@everywhere const dt = h/c
+@everywhere const Δt = h/c
 
 # viscosity
 @everywhere const ν = 2e-5
 
 # parameter for diffusion
-@everywhere const α = ν/(c*h)
+@everywhere const γ = ν/(c*h)
 
 @everywhere function exchangex!(a, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
   # send edges
@@ -101,6 +101,64 @@ end
   return vp, ϕp
 end
 
+@everywhere function Tx(u, ϕ, b, maskx, diri, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
+  nx, ny = size(u)
+  up = Array{Float64, 2}(undef, nx, ny)
+  bp = Array{Float64, 2}(undef, nx, ny)
+  for i = 2:nx-1
+    for j = 1:ny
+      if maskx[i,j] == 1 # interior
+	up[i,j] = u[i,j]
+	α = ϕ[i,j]*b[i,j]/c^2 + Δt/4h*((b[i-1,j] + b[i,j])*(u[i-1,j] + u[i,j]) - (b[i,j] + b[i+1,j])*(u[i,j] + u[i+1,j]))
+	bp[i,j] = c^2*α/ϕ[i,j]
+      elseif (maskx[i,j] == 2) & !diri[i,j] # west boundary
+	up[i,j] = 0.
+	α = ϕ[i,j]*b[i,j]/c^2 + Δt/2h*(-(b[i,j] + b[i+1,j])*u[i+1,j])
+	bp[i,j] = c^2*α/ϕ[i,j]
+      elseif (maskx[i,j] == 3) & !diri[i,j] # east boundary
+	up[i,j] = 0.
+	α = ϕ[i,j]*b[i,j]/c^2 + Δt/2h*((b[i-1,j] + b[i,j])*u[i-1,j])
+	bp[i,j] = c^2*α/ϕ[i,j]
+      else
+	up[i,j] = u[i,j]
+	bp[i,j] = b[i,j]
+      end
+    end
+  end
+  exchangex!(up, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
+  exchangex!(bp, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
+  return up, bp
+end
+
+@everywhere function Ty(v, ϕ, b, masky, diri, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
+  nx, ny = size(v)
+  vp = Array{Float64, 2}(undef, nx, ny)
+  bp = Array{Float64, 2}(undef, nx, ny)
+  for i = 1:nx
+    for j = 2:ny-1
+      if masky[i,j] == 1 # interior
+	vp[i,j] = v[i,j] + Δt/4*(b[i,j-1] + 2b[i,j] + b[i,j+1])
+	α = ϕ[i,j]*b[i,j]/c^2 + Δt/4h*((b[i,j-1] + b[i,j])*(v[i,j-1] + v[i,j]) - (b[i,j] + b[i,j+1])*(v[i,j] + v[i,j+1]))
+	bp[i,j] = c^2*α/ϕ[i,j]
+      elseif (masky[i,j] == 2) & !diri[i,j] # south boundary
+	vp[i,j] = 0.
+	α = ϕ[i,j]*b[i,j]/c^2 + Δt/2h*(-(b[i,j] + b[i,j+1])*v[i,j+1])
+	bp[i,j] = c^2*α/ϕ[i,j]
+      elseif (masky[i,j] == 3) & !diri[i,j] # north boundary
+	vp[i,j] = 0.
+	α = ϕ[i,j]*b[i,j]/c^2 + Δt/2h*((b[i,j-1] + b[i,j])*v[i,j-1])
+	bp[i,j] = c^2*α/ϕ[i,j]
+      else
+	vp[i,j] = v[i,j]
+	bp[i,j] = b[i,j]
+      end
+    end
+  end
+  exchangey!(vp, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
+  exchangey!(bp, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
+  return vp, bp
+end
+
 #"""Rotation split"""
 @everywhere function Rz(u, v, ϕ, maski, channel_send_west, channel_send_east, channel_send_south, channel_send_north,
 			channel_receive_west, channel_receive_east, channel_receive_south, channel_receive_north)
@@ -111,7 +169,7 @@ end
     for j = 2:ny-1
       if maski[i,j] # interior
         ωz = f + (v[i+1,j] - v[i-1,j] - u[i,j+1] + u[i,j-1]) / 2h
-        γ = dt*ωz*c^2/ϕ[i,j]
+        γ = Δt*ωz*c^2/ϕ[i,j]
         Cz = (1 - γ.^2/4)/(1 + γ^2/4)
         Sz = γ/(1 + γ^2/4)
         up[i,j] = u[i,j]*Cz + v[i,j]*Sz
@@ -131,24 +189,47 @@ end
 
 #"""Apply forcing"""
 @everywhere function forcing!(t, u, maski)
-  u[maski] .+= .01*.01*cos(.01t)*dt
+  u[maski] .+= .01*.01*cos(.01t)*Δt
 end
 
-#"Diffusion split (2D)"
-@everywhere function Dxy(a, maski, channel_send_west, channel_send_east, channel_send_south, channel_send_north,
-    channel_receive_west, channel_receive_east, channel_receive_south, channel_receive_north)
+# x-diffusion with no-flux boundary conditions (should allow prescription of flux)
+@everywhere function Dx(a, maskx, diri, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
   nx, ny = size(a)
   ap = Array{Float64, 2}(undef, nx, ny)
   for i = 2:nx-1
-    for j = 2:ny-1
-      if maski[i,j]
-	ap[i,j] = (1-4α)*a[i,j] + α*(a[i-1,j] + a[i+1,j] + a[i,j-1] + a[i,j+1])
+    for j = 1:ny
+      if maskx[i,j] == 1 # interior
+	ap[i,j] = (1-2γ)*a[i,j] + γ*(a[i-1,j] + a[i+1,j])
+      elseif (maskx[i,j] == 2) & !diri[i,j] # west boundary
+	ap[i,j] = (1-2γ)*a[i,j] + 2γ*a[i+1,j]
+      elseif (maskx[i,j] == 3) & !diri[i,j] # east boundary
+	ap[i,j] = (1-2γ)*a[i,j] + 2γ*a[i-1,j]
       else
 	ap[i,j] = a[i,j]
       end
     end
   end
   exchangex!(ap, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
+  return ap
+end
+
+# y-diffusion with no-flux boundary conditions (should allow prescription of flux)
+@everywhere function Dy(a, masky, diri, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
+  nx, ny = size(a)
+  ap = Array{Float64, 2}(undef, nx, ny)
+  for i = 1:nx
+    for j = 2:ny-1
+      if masky[i,j] == 1 # interior
+	ap[i,j] = (1-2γ)*a[i,j] + γ*(a[i,j-1] + a[i,j+1])
+      elseif (masky[i,j] == 2) & !diri[i,j] # south boundary
+	ap[i,j] = (1-2γ)*a[i,j] + 2γ*a[i,j+1]
+      elseif (masky[i,j] == 3) & !diri[i,j] # north boundary
+	ap[i,j] = (1-2γ)*a[i,j] + 2γ*a[i,j-1]
+      else
+	ap[i,j] = a[i,j]
+      end
+    end
+  end
   exchangey!(ap, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
   return ap
 end
@@ -224,51 +305,81 @@ end
   u = zeros(nx, ny)
   v = zeros(nx, ny)
   ϕ = c^2*ones(nx, ny)
-  u[(maskx.==0).&(masky.==0)] .= 0
-  v[(maskx.==0).&(masky.==0)] .= 0
-  ϕ[(maskx.==0).&(masky.==0)] .= 0
+  b = .0005*randn(nx, ny)
+  b[:,2] .= .005/2π
+  b[:,end-1] .= -.005/2π
+  # specify where Dirichlet boundary conditions are to be imposed
+  diriu = (maskx .> 1) .| (masky .> 1)
+  diriv = (maskx .> 1) .| (masky .> 1)
+  dirib = falses(nx, ny)
+  dirib[:,2] .= true
+  dirib[:,end-1] .= true
   # time steps
   for k = 1:steps
     if k % 100 == 1
-      println(k-1)
+      println(@sprintf("%6i %8.3e", k-1, maximum(hypot.(u[2:nx-1,2:ny-1], v[2:nx-1,2:ny-1]))))
       # vorticity
-      ωz = f .+ (v[3:nx,2:ny-1] - v[1:nx-2,2:ny-1] - u[2:nx-1,3:ny] + u[2:nx-1,1:ny-2])/2h
-      ωz[.!maski[2:nx-1,2:ny-1]] .= NaN
-      # save image
-      m = maximum(abs.(ωz[.!isnan.(ωz)]))
+#      ωz = f .+ (v[3:nx,2:ny-1] - v[1:nx-2,2:ny-1] - u[2:nx-1,3:ny] + u[2:nx-1,1:ny-2])/2h
+#      ωz[.!maski[2:nx-1,2:ny-1]] .= NaN
+      # buoyancy
+      bs = b[2:nx-1,2:ny-1]
+      bs[((maskx .== 0) .& (masky .== 0))[2:nx-1, 2:ny-1]] .= NaN
       # save data
       open(@sprintf("sound/data/%1d_%1d_%010d", i, j, k-1), "w") do file
-	write(file, ωz)
+	write(file, bs)#ωz)
       end
     end
-    # Dxy steps
-    u = Dxy(u, maski, channel_send_west, channel_send_east, channel_send_south, channel_send_north, channel_receive_west,
-	    channel_receive_east, channel_receive_south, channel_receive_north)
-    v = Dxy(v, maski, channel_send_west, channel_send_east, channel_send_south, channel_send_north, channel_receive_west,
-	    channel_receive_east, channel_receive_south, channel_receive_north)
-    # Sx step
-    u, ϕ = Sx(u, ϕ, maskx, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
-    # Sy step
-    v, ϕ = Sy(v, ϕ, masky, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
+    # Dx steps
+    u = Dx(u, maskx, diriu, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
+    v = Dx(v, maskx, diriv, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
+    b = Dx(b, maskx, dirib, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
+    # Dy steps
+    u = Dy(u, masky, diriu, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
+    v = Dy(v, masky, diriv, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
+    b = Dy(b, masky, dirib, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
+#    # forcing
+#    forcing!((2k+.5)*Δt, u, maski)
     # Rz step
     u, v = Rz(u, v, ϕ, maski, channel_send_west, channel_send_east, channel_send_south, channel_send_north, channel_receive_west,
         channel_receive_east, channel_receive_south, channel_receive_north)
-    # forcing
-    forcing!((2k+.5)*dt, u, maski)
-    # forcing
-    forcing!((2k+1.5)*dt, u, maski)
-    # Rz step
-    u, v = Rz(u, v, ϕ, maski, channel_send_west, channel_send_east, channel_send_south, channel_send_north, channel_receive_west,
-	      channel_receive_east, channel_receive_south, channel_receive_north)
+    # Sx step
+    u, ϕ = Sx(u, ϕ, maskx, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
+    # Sy step
+    v, ϕ = Sy(v, ϕ, masky, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
+    # Tx split
+    u, b = Tx(u, ϕ, b, maskx, dirib, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
+    # Ty split
+    v, b = Ty(v, ϕ, b, masky, dirib, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
+    # Ty split
+    v, b = Ty(v, ϕ, b, masky, dirib, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
+    # Tx split
+    u, b = Tx(u, ϕ, b, maskx, dirib, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
     # Sy step
     v, ϕ = Sy(v, ϕ, masky, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
     # Sx step
     u, ϕ = Sx(u, ϕ, maskx, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
-    # Dxy steps
-    u = Dxy(u, maski, channel_send_west, channel_send_east, channel_send_south, channel_send_north, channel_receive_west,
-	    channel_receive_east, channel_receive_south, channel_receive_north)
-    v = Dxy(v, maski, channel_send_west, channel_send_east, channel_send_south, channel_send_north, channel_receive_west,
-	    channel_receive_east, channel_receive_south, channel_receive_north)
+    # Rz step
+    u, v = Rz(u, v, ϕ, maski, channel_send_west, channel_send_east, channel_send_south, channel_send_north, channel_receive_west,
+	      channel_receive_east, channel_receive_south, channel_receive_north)
+#    # forcing
+#    forcing!((2k+1.5)*Δt, u, maski)
+    # Dy steps
+    u = Dy(u, masky, diriu, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
+    v = Dy(v, masky, diriv, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
+    b = Dy(b, masky, dirib, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
+    # Dx steps
+    u = Dx(u, maskx, diriu, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
+    v = Dx(v, maskx, diriv, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
+    b = Dx(b, maskx, dirib, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
+#    # print conservation diagnostics
+#    println(@sprintf("%16.10e", mass(ϕ[2:nx-1,2:ny-1], maski[2:nx-1,2:ny-1], maskx[2:nx-1,2:ny-1], masky[2:nx-1,2:ny-1])))
+#    println(@sprintf("%16.10e", energy(u[2:nx-1,2:ny-1], v[2:nx-1,2:ny-1], ϕ[2:nx-1,2:ny-1], b[2:nx-1,2:ny-1],
+#				       [j*h for i = 2:nx-1, j = 2:ny-1], maski[2:nx-1,2:ny-1], maskx[2:nx-1,2:ny-1],
+#				       masky[2:nx-1,2:ny-1])))
+#    println(@sprintf("%16.10e", buoyancy(ϕ[2:nx-1,2:ny-1], b[2:nx-1,2:ny-1], maski[2:nx-1,2:ny-1], maskx[2:nx-1,2:ny-1],
+#					 masky[2:nx-1,2:ny-1])))
+#    println(@sprintf("%16.10e", buoyancy_variance(ϕ[2:nx-1,2:ny-1], b[2:nx-1,2:ny-1], maski[2:nx-1,2:ny-1], maskx[2:nx-1,2:ny-1],
+#						  masky[2:nx-1,2:ny-1])))
   end
   return
 end
@@ -307,7 +418,16 @@ function run_model(steps, tile_sizes)
 end
 
 #"""Mass"""
-#mass(p, m, mx, my) = sum(p[m]) + sum(p[(mx.>1).|(my.>1)])/2
-#
+@everywhere mass(ϕ, maski, maskx, masky) = sum(ϕ[maski]) + sum(ϕ[(maskx.>1).|(masky.>1)])/2
+
 #"""Energy"""
-#energy(u, v, p, m, mx, my) = sum(u[m].^2)/2 + sum(v[m].^2)/2 + sum(p[m].^2)/2c^2 + sum(p[(mx.>1).|(my.>1)].^2)/4c^2
+@everywhere function energy(u, v, ϕ, b, y, maski, maskx, masky)
+  α = ϕ.*b/c^2
+  return sum(u[maski].^2)/2 + sum(v[maski].^2)/2 + sum(ϕ[maski].^2)/2c^2 + sum(ϕ[(maskx.>1).|(masky.>1)].^2)/4c^2 - 2sum(α[maski].*y[maski]) - sum(α[masky.>1].*y[masky.>1])
+end
+
+# buoyancy
+@everywhere buoyancy(ϕ, b, maski, maskx, masky) = sum(ϕ[maski].*b[maski]) + sum(ϕ[(maskx.>1).|(masky.>1)].*b[(maskx.>1).|(masky.>1)])/2
+
+# buoyancy variance
+@everywhere buoyancy_variance(ϕ, b, maski, maskx, masky) = sum(ϕ[maski].*b[maski].^2) + sum(ϕ[(maskx.>1).|(masky.>1)].*b[(maskx.>1).|(masky.>1)].^2)/2
