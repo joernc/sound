@@ -19,7 +19,7 @@
 @everywhere const f = 0.
 
 # forcing frequency
-@everywhere const ω = .01
+@everywhere const ω = .02
 
 # forcing amplitude
 @everywhere const u0 = .01
@@ -31,294 +31,280 @@
 @everywhere const ν = 1e-5
 @everywhere const γ = ν/(c*h)
 
-@everywhere function exchangex!(a, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
+@everywhere function exchangex!(a, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
   # send edges
-  put!(channel_send_west, a[2,:])
-  put!(channel_send_east, a[end-1,:])
+  put!(chan_send_w, a[2,:])
+  put!(chan_send_e, a[end-1,:])
   # receive edges
-  a[1,:] = take!(channel_receive_west)
-  a[end,:] = take!(channel_receive_east)
-  return
+  a[1,:] = take!(chan_receive_w)
+  a[end,:] = take!(chan_receive_e)
 end
 
-@everywhere function exchangey!(a, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
+@everywhere function exchangey!(a, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
   # send edges
-  put!(channel_send_south, a[:,2])
-  put!(channel_send_north, a[:,end-1])
+  put!(chan_send_s, a[:,2])
+  put!(chan_send_n, a[:,end-1])
   # receive edges
-  a[:,1] = take!(channel_receive_south)
-  a[:,end] = take!(channel_receive_north)
-  return
+  a[:,1] = take!(chan_receive_s)
+  a[:,end] = take!(chan_receive_n)
 end
 
 # sound wave split (x-direction)
-@everywhere function Sx(u, ϕ, b, maskx, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
+@everywhere function Sx!(u, ϕ, b, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+  # tile size
   nx, ny = size(u)
-  up = Array{Float64, 2}(undef, nx, ny)
-  ϕp = Array{Float64, 2}(undef, nx, ny)
-  bp = Array{Float64, 2}(undef, nx, ny)
+  # fields at initial time
+  up = copy(u)
+  ϕp = copy(ϕ)
+  bp = copy(b)
+  # loop over grid points
   for i = 2:nx-1
     for j = 1:ny
       if maskx[i,j] == 1 # interior
-	up[i,j] = (u[i-1,j] + u[i+1,j])/2 + (ϕ[i-1,j] - ϕ[i+1,j])/2c
-	ϕp[i,j] = (ϕ[i-1,j] + ϕ[i+1,j])/2 + c/2*(u[i-1,j] - u[i+1,j])
-	bp[i,j] = ϕ[i,j]*b[i,j]/ϕp[i,j]
+	u[i,j] = (up[i-1,j] + up[i+1,j])/2 + (ϕp[i-1,j] - ϕp[i+1,j])/2c
+	ϕ[i,j] = (ϕp[i-1,j] + ϕp[i+1,j])/2 + c/2*(up[i-1,j] - up[i+1,j])
+	b[i,j] = ϕp[i,j]*bp[i,j]/ϕ[i,j]
       elseif maskx[i,j] == 2 # western boundary
-	up[i,j] = 0.
-	ϕp[i,j] = ϕ[i+1,j] - c*u[i+1,j]
-	bp[i,j] = ϕ[i,j]*b[i,j]/ϕp[i,j]
+	u[i,j] = 0.
+	ϕ[i,j] = ϕp[i+1,j] - c*up[i+1,j]
+	b[i,j] = ϕp[i,j]*bp[i,j]/ϕ[i,j]
       elseif maskx[i,j] == 3 # eastern boundary
-	up[i,j] = 0.
-	ϕp[i,j] = ϕ[i-1,j] + c*u[i-1,j]
-	bp[i,j] = ϕ[i,j]*b[i,j]/ϕp[i,j]
-      else
-	up[i,j] = u[i,j]
-	ϕp[i,j] = ϕ[i,j]
-	bp[i,j] = b[i,j]
+	u[i,j] = 0.
+	ϕ[i,j] = ϕp[i-1,j] + c*up[i-1,j]
+	b[i,j] = ϕp[i,j]*bp[i,j]/ϕ[i,j]
       end
     end
   end
-  exchangex!(up, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
-  exchangex!(ϕp, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
-  exchangex!(bp, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
-  return up, ϕp, bp
+  # exchange with neighboring tiles
+  exchangex!(u, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+  exchangex!(ϕ, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+  exchangex!(b, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
 end
 
 # sound wave split (y-direction)
-@everywhere function Sy(v, ϕ, b, masky, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
+@everywhere function Sy!(v, ϕ, b, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+  # tile size
   nx, ny = size(v)
-  vp = Array{Float64, 2}(undef, nx, ny)
-  ϕp = Array{Float64, 2}(undef, nx, ny)
-  bp = Array{Float64, 2}(undef, nx, ny)
+  # fields at initial time
+  vp = copy(v)
+  ϕp = copy(ϕ)
+  bp = copy(b)
+  # loop over grid points
   for i = 1:nx
     for j = 2:ny-1
       if masky[i,j] == 1 # interior
-	vp[i,j] = (v[i,j-1] + v[i,j+1])/2 + (ϕ[i,j-1] - ϕ[i,j+1])/2c
-	ϕp[i,j] = (ϕ[i,j-1] + ϕ[i,j+1])/2 + c/2*(v[i,j-1] - v[i,j+1])
-	bp[i,j] = ϕ[i,j]*b[i,j]/ϕp[i,j]
-      elseif masky[i,j] == 2 # south boundary
-	vp[i,j] = 0.
-	ϕp[i,j] = ϕ[i,j+1] - c*v[i,j+1]
-	bp[i,j] = ϕ[i,j]*b[i,j]/ϕp[i,j]
-      elseif masky[i,j] == 3 # north boundary
-	vp[i,j] = 0.
-	ϕp[i,j] = ϕ[i,j-1] + c*v[i,j-1]
-	bp[i,j] = ϕ[i,j]*b[i,j]/ϕp[i,j]
-      else
-	vp[i,j] = v[i,j]
-	ϕp[i,j] = ϕ[i,j]
-	bp[i,j] = b[i,j]
+	v[i,j] = (vp[i,j-1] + vp[i,j+1])/2 + (ϕp[i,j-1] - ϕp[i,j+1])/2c
+	ϕ[i,j] = (ϕp[i,j-1] + ϕp[i,j+1])/2 + c/2*(vp[i,j-1] - vp[i,j+1])
+	b[i,j] = ϕp[i,j]*bp[i,j]/ϕ[i,j]
+      elseif masky[i,j] == 2 # southern boundary
+	v[i,j] = 0.
+	ϕ[i,j] = ϕp[i,j+1] - c*vp[i,j+1]
+	b[i,j] = ϕp[i,j]*bp[i,j]/ϕ[i,j]
+      elseif masky[i,j] == 3 # northern boundary
+	v[i,j] = 0.
+	ϕ[i,j] = ϕp[i,j-1] + c*vp[i,j-1]
+	b[i,j] = ϕp[i,j]*bp[i,j]/ϕ[i,j]
       end
     end
   end
-  exchangey!(vp, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
-  exchangey!(ϕp, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
-  exchangey!(bp, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
-  return vp, ϕp, bp
+  # exchange with neighboring tiles
+  exchangey!(v, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+  exchangey!(ϕ, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+  exchangey!(b, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
 end
 
 # buoyancy split (x-direction, no gravity)
-@everywhere function Tx(u, ϕ, b, maskx, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
+@everywhere function Tx!(u, ϕ, b, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+  # tile size
   nx, ny = size(u)
+  # fields at initial time
+  up = copy(u)
+  bp = copy(b)
+  # fields at midpoint
   ui = Array{Float64, 2}(undef, nx, ny)
   bi = Array{Float64, 2}(undef, nx, ny)
+  # loop over grid points
   for i = 2:nx-1
     for j = 1:ny
       if maskx[i,j] == 1 # interior
-	ui[i,j] = u[i,j]
-	α = ϕ[i,j]*b[i,j]/c^2 + ((b[i-1,j] + b[i,j])*(u[i-1,j] + u[i,j]) - (b[i,j] + b[i+1,j])*(u[i,j] + u[i+1,j]))/8c
-	bi[i,j] = c^2*α/ϕ[i,j]
+	ui[i,j] = up[i,j]
+	bi[i,j] = bp[i,j] + c/8*((bp[i-1,j] + bp[i,j])*(up[i-1,j] + up[i,j]) - (bp[i,j] + bp[i+1,j])*(up[i,j] + up[i+1,j]))/ϕ[i,j]
       elseif (maskx[i,j] == 2) # western boundary
 	ui[i,j] = 0.
-	α = ϕ[i,j]*b[i,j]/c^2 + (-(b[i,j] + b[i+1,j])*u[i+1,j])/4c
-	bi[i,j] = c^2*α/ϕ[i,j]
+	bi[i,j] = bp[i,j] + c/4*(-(bp[i,j] + bp[i+1,j])*up[i+1,j])/ϕ[i,j]
       elseif (maskx[i,j] == 3) # eastern boundary
 	ui[i,j] = 0.
-	α = ϕ[i,j]*b[i,j]/c^2 + ((b[i-1,j] + b[i,j])*u[i-1,j])/4c
-	bi[i,j] = c^2*α/ϕ[i,j]
-      else
-	ui[i,j] = u[i,j]
-	bi[i,j] = b[i,j]
+	bi[i,j] = bp[i,j] + c/4*((bp[i-1,j] + bp[i,j])*up[i-1,j])/ϕ[i,j]
       end
     end
   end
-  exchangex!(ui, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
-  exchangex!(bi, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
-  up = Array{Float64, 2}(undef, nx, ny)
-  bp = Array{Float64, 2}(undef, nx, ny)
+  # exchange with neighboring tiles
+  exchangex!(ui, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+  exchangex!(bi, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+  # loop over grid points
   for i = 2:nx-1
     for j = 1:ny
       if maskx[i,j] == 1 # interior
-	up[i,j] = u[i,j]
-	α = ϕ[i,j]*b[i,j]/c^2 + ((bi[i-1,j] + bi[i,j])*(ui[i-1,j] + ui[i,j]) - (bi[i,j] + bi[i+1,j])*(ui[i,j] + ui[i+1,j]))/4c
-	bp[i,j] = c^2*α/ϕ[i,j]
+	u[i,j] = up[i,j]
+	b[i,j] = bp[i,j] + c/4*((bi[i-1,j] + bi[i,j])*(ui[i-1,j] + ui[i,j]) - (bi[i,j] + bi[i+1,j])*(ui[i,j] + ui[i+1,j]))/ϕ[i,j]
       elseif (maskx[i,j] == 2) # west boundary
-	up[i,j] = 0.
-	α = ϕ[i,j]*b[i,j]/c^2 + (-(bi[i,j] + bi[i+1,j])*ui[i+1,j])/2c
-	bp[i,j] = c^2*α/ϕ[i,j]
+	u[i,j] = 0.
+	b[i,j] = bp[i,j] + c/2*(-(bi[i,j] + bi[i+1,j])*ui[i+1,j])/ϕ[i,j]
       elseif (maskx[i,j] == 3) # east boundary
-	up[i,j] = 0.
-	α = ϕ[i,j]*b[i,j]/c^2 + ((bi[i-1,j] + bi[i,j])*ui[i-1,j])/2c
-	bp[i,j] = c^2*α/ϕ[i,j]
-      else
-	up[i,j] = ui[i,j]
-	bp[i,j] = bi[i,j]
+	u[i,j] = 0.
+	b[i,j] = bp[i,j] + c/2*((bi[i-1,j] + bi[i,j])*ui[i-1,j])/ϕ[i,j]
       end
     end
   end
-  exchangex!(up, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
-  exchangex!(bp, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
-  return up, bp
+  # exchange with neighboring tiles
+  exchangex!(u, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+  exchangex!(b, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
 end
 
 # buoyancy split (y-direction, gravity)
-@everywhere function Ty(v, ϕ, b, masky, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
+@everywhere function Ty!(v, ϕ, b, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+  # tile size
   nx, ny = size(v)
+  # fields at initial time
+  vp = copy(v)
+  bp = copy(b)
+  # fields at midpoint
   vi = Array{Float64, 2}(undef, nx, ny)
   bi = Array{Float64, 2}(undef, nx, ny)
+  # loop over grid points
   for i = 1:nx
     for j = 2:ny-1
       if masky[i,j] == 1 # interior
-	vi[i,j] = v[i,j] + Δt/8*(b[i,j-1] + 2b[i,j] + b[i,j+1])
-	α = ϕ[i,j]*b[i,j]/c^2 + ((b[i,j-1] + b[i,j])*(v[i,j-1] + v[i,j]) - (b[i,j] + b[i,j+1])*(v[i,j] + v[i,j+1]))/8c
-	bi[i,j] = c^2*α/ϕ[i,j]
+	vi[i,j] = vp[i,j] + Δt/8*(bp[i,j-1] + 2bp[i,j] + bp[i,j+1])
+	bi[i,j] = bp[i,j] + c/8*((bp[i,j-1] + bp[i,j])*(vp[i,j-1] + vp[i,j]) - (bp[i,j] + bp[i,j+1])*(vp[i,j] + vp[i,j+1]))/ϕ[i,j]
       elseif masky[i,j] == 2 # southern boundary
 	vi[i,j] = 0.
-	α = ϕ[i,j]*b[i,j]/c^2 + (-(b[i,j] + b[i,j+1])*v[i,j+1])/4c
-	bi[i,j] = c^2*α/ϕ[i,j]
+	bi[i,j] = bp[i,j] + c/4*(-(bp[i,j] + bp[i,j+1])*vp[i,j+1])/ϕ[i,j]
       elseif masky[i,j] == 3 # northern boundary
 	vi[i,j] = 0.
-	α = ϕ[i,j]*b[i,j]/c^2 + ((b[i,j-1] + b[i,j])*v[i,j-1])/4c
-	bi[i,j] = c^2*α/ϕ[i,j]
-      else
-	vi[i,j] = v[i,j]
-	bi[i,j] = b[i,j]
+	bi[i,j] = bp[i,j] + c/4*((bp[i,j-1] + bp[i,j])*vp[i,j-1])/ϕ[i,j]
       end
     end
   end
-  exchangey!(vi, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
-  exchangey!(bi, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
-  vp = Array{Float64, 2}(undef, nx, ny)
-  bp = Array{Float64, 2}(undef, nx, ny)
+  # exchange with neighboring tiles
+  exchangey!(vi, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+  exchangey!(bi, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+  # loop over grid points
   for i = 1:nx
     for j = 2:ny-1
       if masky[i,j] == 1 # interior
-	vp[i,j] = v[i,j] + Δt/4*(bi[i,j-1] + 2bi[i,j] + bi[i,j+1])
-	α = ϕ[i,j]*b[i,j]/c^2 + ((bi[i,j-1] + bi[i,j])*(vi[i,j-1] + vi[i,j]) - (bi[i,j] + bi[i,j+1])*(vi[i,j] + vi[i,j+1]))/4c
-	bp[i,j] = c^2*α/ϕ[i,j]
+	v[i,j] = vp[i,j] + Δt/4*(bi[i,j-1] + 2bi[i,j] + bi[i,j+1])
+	b[i,j] = bp[i,j] + c/4*((bi[i,j-1] + bi[i,j])*(vi[i,j-1] + vi[i,j]) - (bi[i,j] + bi[i,j+1])*(vi[i,j] + vi[i,j+1]))/ϕ[i,j]
       elseif masky[i,j] == 2 # southern boundary
-	vp[i,j] = 0.
-	α = ϕ[i,j]*b[i,j]/c^2 + (-(bi[i,j] + bi[i,j+1])*vi[i,j+1])/2c
-	bp[i,j] = c^2*α/ϕ[i,j]
+	v[i,j] = 0.
+	b[i,j] = bp[i,j] + c/2*(-(bi[i,j] + bi[i,j+1])*vi[i,j+1])/ϕ[i,j]
       elseif masky[i,j] == 3 # northern boundary
-	vp[i,j] = 0.
-	α = ϕ[i,j]*b[i,j]/c^2 + ((bi[i,j-1] + bi[i,j])*vi[i,j-1])/2c
-	bp[i,j] = c^2*α/ϕ[i,j]
-      else
-	vp[i,j] = v[i,j]
-	bp[i,j] = b[i,j]
+	v[i,j] = 0.
+	b[i,j] = bp[i,j] + c/2*((bi[i,j-1] + bi[i,j])*vi[i,j-1])/ϕ[i,j]
       end
     end
   end
-  exchangey!(vp, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
-  exchangey!(bp, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
-  return vp, bp
+  # exchange with neighboring tiles
+  exchangey!(v, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+  exchangey!(b, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
 end
 
 # rotation split
-@everywhere function Rz(u, v, ϕ, maski, channel_send_west, channel_send_east, channel_send_south, channel_send_north,
-			channel_receive_west, channel_receive_east, channel_receive_south, channel_receive_north)
-  nx, ny = size(u)
-  up = Array{Float64, 2}(undef, nx, ny)
-  vp = Array{Float64, 2}(undef, nx, ny)
+@everywhere function Rz!(u, v, ϕ, maski, chan_send_w, chan_send_e, chan_send_s, chan_send_n,
+			chan_receive_w, chan_receive_e, chan_receive_s, chan_receive_n)
+  # tile size
+  nx, ny = size(v)
+  # fields at initial time
+  up = copy(u)
+  vp = copy(v)
+  # loop over grid points
   for i = 2:nx-1
     for j = 2:ny-1
       if maski[i,j] # interior
-        ωz = f + (v[i+1,j] - v[i-1,j] - u[i,j+1] + u[i,j-1]) / 2h
+        ωz = f + (vp[i+1,j] - vp[i-1,j] - up[i,j+1] + up[i,j-1]) / 2h
         γ = Δt*ωz*c^2/ϕ[i,j]
         Cz = (1 - γ.^2/4)/(1 + γ^2/4)
         Sz = γ/(1 + γ^2/4)
-        up[i,j] = u[i,j]*Cz + v[i,j]*Sz
-	vp[i,j] = v[i,j]*Cz - u[i,j]*Sz
-      else # boundary or solid
-	up[i,j] = u[i,j]
-	vp[i,j] = v[i,j]
+        u[i,j] = up[i,j]*Cz + vp[i,j]*Sz
+	v[i,j] = vp[i,j]*Cz - up[i,j]*Sz
       end
     end
   end
-  exchangex!(up, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
-  exchangex!(vp, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
-  exchangey!(up, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
-  exchangey!(vp, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
-  return up, vp
+  # exchange with neighboring tiles
+  exchangex!(u, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+  exchangex!(v, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+  exchangey!(u, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+  exchangey!(v, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
 end
 
 # apply forcing
-@everywhere function forcing!(t, u, maski)
+@everywhere function F!(t, u, maski)
   u[maski] .+= u0*ω*cos(ω*t)*Δt
 end
 
 # x-diffusion with no-flux boundary conditions (should allow prescription of flux)
-@everywhere function Dx(a, maskx, diri, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
+@everywhere function Dx!(a, maskx, diri, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+  # tile size
   nx, ny = size(a)
-  ap = Array{Float64, 2}(undef, nx, ny)
+  # field at initial time
+  ap = copy(a)
+  # loop over grid points
   for i = 2:nx-1
     for j = 1:ny
       if maskx[i,j] == 1 # interior
-	ap[i,j] = (1-2γ)*a[i,j] + γ*(a[i-1,j] + a[i+1,j])
+	a[i,j] = (1-2γ)*ap[i,j] + γ*(ap[i-1,j] + ap[i+1,j])
       elseif maskx[i,j] == 2 # west boundary
-	if diri[i,j]
-	  ap[i,j] = 0.
-	else
-	  ap[i,j] = (1-2γ)*a[i,j] + 2γ*a[i+1,j]
+	if diri[i,j] # Dirichlet BC
+	  a[i,j] = 0.
+	else # Neumann BC
+	  a[i,j] = (1-2γ)*ap[i,j] + 2γ*ap[i+1,j]
 	end
       elseif maskx[i,j] == 3 # east boundary
-	if diri[i,j]
-	  ap[i,j] = 0.
-	else
-	  ap[i,j] = (1-2γ)*a[i,j] + 2γ*a[i-1,j]
+	if diri[i,j] # Dirichlet BC
+	  a[i,j] = 0.
+	else # Neumann BC
+	  a[i,j] = (1-2γ)*ap[i,j] + 2γ*ap[i-1,j]
 	end
-      else
-	ap[i,j] = a[i,j]
       end
     end
   end
-  exchangex!(ap, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
-  return ap
+  # exchange with neighboring tiles
+  exchangex!(a, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
 end
 
 # y-diffusion with no-flux boundary conditions (should allow prescription of flux)
-@everywhere function Dy(a, masky, diri, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
+@everywhere function Dy!(a, masky, diri, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+  # tile size
   nx, ny = size(a)
-  ap = Array{Float64, 2}(undef, nx, ny)
+  # field at initial time
+  ap = copy(a)
+  # loop over grid points
   for i = 1:nx
     for j = 2:ny-1
       if masky[i,j] == 1 # interior
-	ap[i,j] = (1-2γ)*a[i,j] + γ*(a[i,j-1] + a[i,j+1])
+	a[i,j] = (1-2γ)*ap[i,j] + γ*(ap[i,j-1] + ap[i,j+1])
       elseif masky[i,j] == 2 # south boundary
-	if diri[i,j]
-	  ap[i,j] = 0.
-	else
-	  ap[i,j] = (1-2γ)*a[i,j] + 2γ*a[i,j+1]
+	if diri[i,j] # Dirichlet BC
+	  a[i,j] = 0.
+	else # Neumann BC
+	  a[i,j] = (1-2γ)*ap[i,j] + 2γ*ap[i,j+1]
 	end
       elseif masky[i,j] == 3 # north boundary
-	if diri[i,j]
-	  ap[i,j] = 0.
-	else
-	  ap[i,j] = (1-2γ)*a[i,j] + 2γ*a[i,j-1]
+	if diri[i,j] # Dirichlet BC
+	  a[i,j] = 0.
+	else # Neumann BC
+	  a[i,j] = (1-2γ)*ap[i,j] + 2γ*ap[i,j-1]
 	end
-      else
-	ap[i,j] = a[i,j]
       end
     end
   end
-  exchangey!(ap, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
-  return ap
+  # exchange with neighboring tiles
+  exchangey!(a, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
 end
 
 # boundary masks (see Fig. 1 in Salmon for a sketch)
-@everywhere function boundary_masks(fluid, channel_send_west, channel_send_east, channel_send_south, channel_send_north,
-				    channel_receive_west, channel_receive_east, channel_receive_south, channel_receive_north)
+@everywhere function boundary_masks(fluid, chan_send_w, chan_send_e, chan_send_s, chan_send_n,
+				    chan_receive_w, chan_receive_e, chan_receive_s, chan_receive_n)
   nx, ny = size(fluid)
   maskx = zeros(UInt8, nx, ny)
   masky = zeros(UInt8, nx, ny)
@@ -345,18 +331,18 @@ end
   # interior points
   maski = (maskx .== 1) .& (masky .== 1)
   # exchange edges
-  exchangex!(maski, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
-  exchangey!(maski, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
-  exchangex!(maskx, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
-  exchangey!(maskx, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
-  exchangex!(masky, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
-  exchangey!(masky, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
+  exchangex!(maski, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+  exchangey!(maski, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+  exchangex!(maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+  exchangey!(maskx, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+  exchangex!(masky, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+  exchangey!(masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
   return maski, maskx, masky
 end
 
 # read in fluid mask
-@everywhere function read_topo(irange, jrange, channel_send_west, channel_send_east, channel_send_south, channel_send_north,
-			       channel_receive_west, channel_receive_east, channel_receive_south, channel_receive_north)
+@everywhere function read_topo(irange, jrange, chan_send_w, chan_send_e, chan_send_s, chan_send_n,
+			       chan_receive_w, chan_receive_e, chan_receive_s, chan_receive_n)
   # tile size plus two points padding
   nx = length(irange) + 2
   ny = length(jrange) + 2
@@ -368,28 +354,27 @@ end
   fluid = Array{Bool}(undef, nx, ny)
   fluid[2:nx-1,2:ny-1] = full_mask[irange,jrange]
   # exchange edges
-  exchangex!(fluid, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
-  exchangey!(fluid, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
+  exchangex!(fluid, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+  exchangey!(fluid, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
   # interior, x-, and y-masks
-  maski, maskx, masky = boundary_masks(fluid, channel_send_west, channel_send_east, channel_send_south, channel_send_north,
-				       channel_receive_west, channel_receive_east, channel_receive_south, channel_receive_north)
+  maski, maskx, masky = boundary_masks(fluid, chan_send_w, chan_send_e, chan_send_s, chan_send_n,
+				       chan_receive_w, chan_receive_e, chan_receive_s, chan_receive_n)
   return maski, maskx, masky
 end
 
 # run model on tile
-@everywhere function run_tile(i, j, irange, jrange, steps, channel_send_west, channel_send_east, channel_send_south,
-			      channel_send_north, channel_receive_west, channel_receive_east, channel_receive_south,
-			      channel_receive_north)
+@everywhere function run_tile(i, j, irange, jrange, steps, chan_send_w, chan_send_e, chan_send_s, chan_send_n,
+			      chan_receive_w, chan_receive_e, chan_receive_s, chan_receive_n)
   # read topography mask
-  maski, maskx, masky = read_topo(irange, jrange, channel_send_west, channel_send_east, channel_send_south, channel_send_north,
-				  channel_receive_west, channel_receive_east, channel_receive_south, channel_receive_north)
+  maski, maskx, masky = read_topo(irange, jrange, chan_send_w, chan_send_e, chan_send_s, chan_send_n,
+				  chan_receive_w, chan_receive_e, chan_receive_s, chan_receive_n)
   # initialization
   nx = length(irange) + 2
   ny = length(jrange) + 2
   u = zeros(nx, ny)
   v = zeros(nx, ny)
   y = [(j-1)*h for i = irange[1]-1:irange[end]+1, j = jrange[1]-1:jrange[end]+1]
-  N = .02
+  N = .05
   ϕ = c^2*ones(nx, ny) + N^2*y.^2/2
   b = N^2*y
   # specify where Dirichlet boundary conditions are to be imposed
@@ -430,48 +415,33 @@ end
 	write(file, ωz)
       end
     end
-    # Dx steps
-    u = Dx(u, maskx, diriu, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
-    v = Dx(v, maskx, diriv, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
-    b = Dx(b, maskx, dirib, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
-    # Dy steps
-    u = Dy(u, masky, diriu, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
-    v = Dy(v, masky, diriv, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
-    b = Dy(b, masky, dirib, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
-    # forcing
-    forcing!((k+.5)*Δt, u, maski)
-    # Rz step
-    u, v = Rz(u, v, ϕ, maski, channel_send_west, channel_send_east, channel_send_south, channel_send_north, channel_receive_west,
-        channel_receive_east, channel_receive_south, channel_receive_north)
-    # Tx split
-    u, b = Tx(u, ϕ, b, maskx, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
-    # Sx step
-    u, ϕ, b = Sx(u, ϕ, b, maskx, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
-    # Sy step
-    v, ϕ, b = Sy(v, ϕ, b, masky, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
-    # Ty split
-    v, b = Ty(v, ϕ, b, masky, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
-    # Ty split
-    v, b = Ty(v, ϕ, b, masky, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
-    # Sy step
-    v, ϕ, b = Sy(v, ϕ, b, masky, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
-    # Sx step
-    u, ϕ, b = Sx(u, ϕ, b, maskx, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
-    # Tx split
-    u, b = Tx(u, ϕ, b, maskx, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
-    # Rz step
-    u, v = Rz(u, v, ϕ, maski, channel_send_west, channel_send_east, channel_send_south, channel_send_north, channel_receive_west,
-	      channel_receive_east, channel_receive_south, channel_receive_north)
-    # forcing
-    forcing!((k+1.5)*Δt, u, maski)
-    # Dy steps
-    u = Dy(u, masky, diriu, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
-    v = Dy(v, masky, diriv, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
-    b = Dy(b, masky, dirib, channel_send_south, channel_send_north, channel_receive_south, channel_receive_north)
-    # Dx steps
-    u = Dx(u, maskx, diriu, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
-    v = Dx(v, maskx, diriv, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
-    b = Dx(b, maskx, dirib, channel_send_west, channel_send_east, channel_receive_west, channel_receive_east)
+    # Strang splitting
+    Dx!(u, maskx, diriu, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+    Dx!(v, maskx, diriv, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+    Dx!(b, maskx, dirib, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+    Dy!(u, masky, diriu, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+    Dy!(v, masky, diriv, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+    Dy!(b, masky, dirib, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+    F!((k+.5)*Δt, u, maski)
+    Rz!(u, v, ϕ, maski, chan_send_w, chan_send_e, chan_send_s, chan_send_n,
+	chan_receive_w, chan_receive_e, chan_receive_s, chan_receive_n)
+    Tx!(u, ϕ, b, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+    Sx!(u, ϕ, b, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+    Sy!(v, ϕ, b, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+    Ty!(v, ϕ, b, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+    Ty!(v, ϕ, b, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+    Sy!(v, ϕ, b, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+    Sx!(u, ϕ, b, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+    Tx!(u, ϕ, b, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+    Rz!(u, v, ϕ, maski, chan_send_w, chan_send_e, chan_send_s, chan_send_n,
+        chan_receive_w, chan_receive_e, chan_receive_s, chan_receive_n)
+    F!((k+1.5)*Δt, u, maski)
+    Dy!(u, masky, diriu, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+    Dy!(v, masky, diriv, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+    Dy!(b, masky, dirib, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+    Dx!(u, maskx, diriu, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+    Dx!(v, maskx, diriv, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+    Dx!(b, maskx, dirib, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
   end
   return
 end
@@ -486,10 +456,10 @@ function run_model(steps, tile_sizes)
   ni = length(tile_sizes[1])
   nj = length(tile_sizes[2])
   # set up remote channels for edge communication
-  channels_west = [RemoteChannel(()->Channel{Array{Union{Missing, Float64}}}(1)) for i = 1:ni, j = 1:nj]
-  channels_east = [RemoteChannel(()->Channel{Array{Union{Missing, Float64}}}(1)) for i = 1:ni, j = 1:nj]
-  channels_south = [RemoteChannel(()->Channel{Array{Union{Missing, Float64}}}(1)) for i = 1:ni, j = 1:nj]
-  channels_north = [RemoteChannel(()->Channel{Array{Union{Missing, Float64}}}(1)) for i = 1:ni, j = 1:nj]
+  chan_w = [RemoteChannel(()->Channel{Array{Float64, 1}}(1)) for i = 1:ni, j = 1:nj]
+  chan_e = [RemoteChannel(()->Channel{Array{Float64, 1}}(1)) for i = 1:ni, j = 1:nj]
+  chan_s = [RemoteChannel(()->Channel{Array{Float64, 1}}(1)) for i = 1:ni, j = 1:nj]
+  chan_n = [RemoteChannel(()->Channel{Array{Float64, 1}}(1)) for i = 1:ni, j = 1:nj]
   # spawn work on tiles
   a = Array{Future}(undef, ni, nj)
   for i in 1:ni
@@ -497,15 +467,10 @@ function run_model(steps, tile_sizes)
       irange, jrange = tile_range(i, j, tile_sizes)
       p = workers()[mod1((i-1)*nj+j, nprocs()-1)]
       println(p, ": ", i, " ", j, " ", irange, " ", jrange)
-      a[i,j] = @spawnat p run_tile(i, j, irange, jrange, steps, channels_west[i,j], channels_east[i,j], channels_south[i,j],
-				   channels_north[i,j], channels_east[mod1(i-1,ni),j], channels_west[mod1(i+1,ni),j],
-				   channels_north[i,mod1(j-1,nj)], channels_south[i,mod1(j+1,nj)])
+      a[i,j] = @spawnat p run_tile(i, j, irange, jrange, steps, chan_w[i,j], chan_e[i,j], chan_s[i,j], chan_n[i,j],
+				   chan_e[mod1(i-1,ni),j], chan_w[mod1(i+1,ni),j], chan_n[i,mod1(j-1,nj)], chan_s[i,mod1(j+1,nj)])
     end
   end
-  # wait for result
-  for i in 1:ni
-    for j in 1:nj
-      wait(a[i,j])
-    end
-  end
+  # wait for results
+  wait.(a)
 end
