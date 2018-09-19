@@ -36,7 +36,7 @@ function assemble(steps, tile_sizes)
 	end
       end
     end
-    m = 2.5e-2
+    m = 2.
     imsave(@sprintf("sound/fig/u/%010d.png", k), Array(u'), origin="lower", vmin=-m, vmax=m, cmap="RdBu_r")
     imsave(@sprintf("sound/fig/v/%010d.png", k), Array(v'), origin="lower", vmin=-m, vmax=m, cmap="RdBu_r")
     imsave(@sprintf("sound/fig/ϕ/%010d.png", k), Array(ϕ'), origin="lower")

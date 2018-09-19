@@ -1,35 +1,38 @@
 # Implementation of Rick Salmon's "An Ocean Circulation Model Based on Operator-Splitting, Hamiltonian Brackets, and the Inclusion of Sound Waves" (JPO, 2009)
 
 # next steps:
+# - implement aspect ratio trick
 # - extend to third dimension
 # - allow specification of nonzero BC
 # - organize channels better?
 # - type annotations for better performance?
+# - save as HDF5 files
 
 @everywhere using Printf
 @everywhere using HDF5
 
 # grid spacing (domain height 1)
-@everywhere const h = 1/256
+@everywhere const h = 1/512
 
 # sound speed
-@everywhere const c = 1.
+@everywhere const c = 100.
 
 # inertial period
 @everywhere const f = 0.
 
 # forcing frequency
-@everywhere const ω = .02
+@everywhere const ω = 22.4
 
-# forcing amplitude
-@everywhere const u0 = .01
+# initial stratification
+@everywhere const N = 160.
 
 # time step
 @everywhere const Δt = h/c
 
 # viscosity/diffusion
-@everywhere const ν = 1e-5
-@everywhere const γ = ν/(c*h)
+#@everywhere const ν = 1.5e-6
+@everywhere const ν = 1e-2
+@everywhere const α = ν/(c*h)
 
 @everywhere function exchangex!(a, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
   # send edges
@@ -213,7 +216,7 @@ end
 @everywhere function Rz!(u, v, ϕ, maski, chan_send_w, chan_send_e, chan_send_s, chan_send_n,
 			chan_receive_w, chan_receive_e, chan_receive_s, chan_receive_n)
   # tile size
-  nx, ny = size(v)
+  nx, ny = size(u)
   # fields at initial time
   up = copy(u)
   vp = copy(v)
@@ -238,8 +241,8 @@ end
 end
 
 # apply forcing
-@everywhere function F!(t, u, maski)
-  u[maski] .+= u0*ω*cos(ω*t)*Δt
+@everywhere function F!(t, u)
+  u .+= ω*cos(ω*t)*Δt
 end
 
 # x-diffusion with no-flux boundary conditions (should allow prescription of flux)
@@ -252,18 +255,18 @@ end
   for i = 2:nx-1
     for j = 1:ny
       if maskx[i,j] == 1 # interior
-	a[i,j] = (1-2γ)*ap[i,j] + γ*(ap[i-1,j] + ap[i+1,j])
+	a[i,j] = (1-2α)*ap[i,j] + α*(ap[i-1,j] + ap[i+1,j])
       elseif maskx[i,j] == 2 # west boundary
 	if diri[i,j] # Dirichlet BC
 	  a[i,j] = 0.
 	else # Neumann BC
-	  a[i,j] = (1-2γ)*ap[i,j] + 2γ*ap[i+1,j]
+	  a[i,j] = (1-2α)*ap[i,j] + 2α*ap[i+1,j]
 	end
       elseif maskx[i,j] == 3 # east boundary
 	if diri[i,j] # Dirichlet BC
 	  a[i,j] = 0.
 	else # Neumann BC
-	  a[i,j] = (1-2γ)*ap[i,j] + 2γ*ap[i-1,j]
+	  a[i,j] = (1-2α)*ap[i,j] + 2α*ap[i-1,j]
 	end
       end
     end
@@ -282,18 +285,18 @@ end
   for i = 1:nx
     for j = 2:ny-1
       if masky[i,j] == 1 # interior
-	a[i,j] = (1-2γ)*ap[i,j] + γ*(ap[i,j-1] + ap[i,j+1])
+	a[i,j] = (1-2α)*ap[i,j] + α*(ap[i,j-1] + ap[i,j+1])
       elseif masky[i,j] == 2 # south boundary
 	if diri[i,j] # Dirichlet BC
 	  a[i,j] = 0.
 	else # Neumann BC
-	  a[i,j] = (1-2γ)*ap[i,j] + 2γ*ap[i,j+1]
+	  a[i,j] = (1-2α)*ap[i,j] + 2α*ap[i,j+1]
 	end
       elseif masky[i,j] == 3 # north boundary
 	if diri[i,j] # Dirichlet BC
 	  a[i,j] = 0.
 	else # Neumann BC
-	  a[i,j] = (1-2γ)*ap[i,j] + 2γ*ap[i,j-1]
+	  a[i,j] = (1-2α)*ap[i,j] + 2α*ap[i,j-1]
 	end
       end
     end
@@ -347,7 +350,8 @@ end
   nx = length(irange) + 2
   ny = length(jrange) + 2
   # read from file
-  full_mask = h5read("julia_256_512.h5", "m") .> .5
+  full_mask = trues(1024, 512)
+  full_mask[256:767,128:383] = h5read("julia_256_512.h5", "m") .> .5
   # add solid boundary at top
   full_mask[:,end] .= false
   # assign to tile
@@ -374,7 +378,6 @@ end
   u = zeros(nx, ny)
   v = zeros(nx, ny)
   y = [(j-1)*h for i = irange[1]-1:irange[end]+1, j = jrange[1]-1:jrange[end]+1]
-  N = .05
   ϕ = c^2*ones(nx, ny) + N^2*y.^2/2
   b = N^2*y
   # specify where Dirichlet boundary conditions are to be imposed
@@ -384,7 +387,7 @@ end
   # time steps
   for k = 1:steps
     if k % 100 == 1
-      println(@sprintf("%6i %9.3e %9.3e", k-1, (k-1)*Δt, maximum(hypot.(u[2:nx-1,2:ny-1], v[2:nx-1,2:ny-1]))))
+      println(@sprintf("%6i %9.3e %9.3e", k-1, (k-1)*2Δt, maximum(hypot.(u[2:nx-1,2:ny-1], v[2:nx-1,2:ny-1]))))
       # discard edges
       us = u[2:nx-1,2:ny-1]
       vs = v[2:nx-1,2:ny-1]
@@ -422,7 +425,7 @@ end
     Dy!(u, masky, diriu, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
     Dy!(v, masky, diriv, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
     Dy!(b, masky, dirib, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
-    F!((k+.5)*Δt, u, maski)
+    F!((2k-1.5)*Δt, u)
     Rz!(u, v, ϕ, maski, chan_send_w, chan_send_e, chan_send_s, chan_send_n,
 	chan_receive_w, chan_receive_e, chan_receive_s, chan_receive_n)
     Tx!(u, ϕ, b, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
@@ -435,7 +438,7 @@ end
     Tx!(u, ϕ, b, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
     Rz!(u, v, ϕ, maski, chan_send_w, chan_send_e, chan_send_s, chan_send_n,
         chan_receive_w, chan_receive_e, chan_receive_s, chan_receive_n)
-    F!((k+1.5)*Δt, u, maski)
+    F!((2k-.5)*Δt, u)
     Dy!(u, masky, diriu, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
     Dy!(v, masky, diriv, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
     Dy!(b, masky, dirib, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
