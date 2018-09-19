@@ -402,19 +402,19 @@ end
       bs[((maskx .== 0) .& (masky .== 0))[2:nx-1, 2:ny-1]] .= NaN
       ωz[.!maski[2:nx-1,2:ny-1]] .= NaN
       # save data
-      open(@sprintf("sound/data/u/%1d_%1d_%010d", i, j, k-1), "w") do file
+      open(@sprintf("data/u/%1d_%1d_%010d", i, j, k-1), "w") do file
 	write(file, us)
       end
-      open(@sprintf("sound/data/v/%1d_%1d_%010d", i, j, k-1), "w") do file
+      open(@sprintf("data/v/%1d_%1d_%010d", i, j, k-1), "w") do file
 	write(file, vs)
       end
-      open(@sprintf("sound/data/ϕ/%1d_%1d_%010d", i, j, k-1), "w") do file
+      open(@sprintf("data/ϕ/%1d_%1d_%010d", i, j, k-1), "w") do file
 	write(file, ϕs)
       end
-      open(@sprintf("sound/data/b/%1d_%1d_%010d", i, j, k-1), "w") do file
+      open(@sprintf("data/b/%1d_%1d_%010d", i, j, k-1), "w") do file
 	write(file, bs)
       end
-      open(@sprintf("sound/data/ωz/%1d_%1d_%010d", i, j, k-1), "w") do file
+      open(@sprintf("data/ωz/%1d_%1d_%010d", i, j, k-1), "w") do file
 	write(file, ωz)
       end
     end
