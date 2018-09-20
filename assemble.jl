@@ -1,9 +1,10 @@
 using Printf
 using PyPlot
+using HDF5
 
 # get index ranges for tiles
 tile_range(i, j, tile_sizes) = [sum(tile_sizes[1][1:i-1])+1:sum(tile_sizes[1][1:i]),
-				sum(tile_sizes[2][1:j-1])+1:sum(tile_sizes[2][1:j])]
+                                sum(tile_sizes[2][1:j-1])+1:sum(tile_sizes[2][1:j])]
 
 # assemble and plot results
 function assemble(steps, tile_sizes)
@@ -18,34 +19,25 @@ function assemble(steps, tile_sizes)
     ωy = Array{Float64}(undef, sum(tile_sizes[1]), sum(tile_sizes[2]))
     for i in 1:ni
       for j in 1:nj
-	irange, jrange = tile_range(i, j, tile_sizes)
-	open(@sprintf("data/u/%1d_%1d_%010d", i, j, k), "r") do file
-	  u[irange,jrange] = [read(file, Float64) for ii in irange, jj in jrange]
-	end
-	open(@sprintf("data/w/%1d_%1d_%010d", i, j, k), "r") do file
-	  w[irange,jrange] = [read(file, Float64) for ii in irange, jj in jrange]
-	end
-	open(@sprintf("data/ϕ/%1d_%1d_%010d", i, j, k), "r") do file
-	  ϕ[irange,jrange] = [read(file, Float64) for ii in irange, jj in jrange]
-	end
-	open(@sprintf("data/b/%1d_%1d_%010d", i, j, k), "r") do file
-	  b[irange,jrange] = [read(file, Float64) for ii in irange, jj in jrange]
-	end
-	open(@sprintf("data/ωy/%1d_%1d_%010d", i, j, k), "r") do file
-	  ωy[irange,jrange] = [read(file, Float64) for ii in irange, jj in jrange]
-	end
+        irange, jrange = tile_range(i, j, tile_sizes)
+        filename = @sprintf("data/%010d_%1d_%1d.h5", k, i, j)
+        u[irange,jrange] = h5read(filename, "u")
+        w[irange,jrange] = h5read(filename, "w")
+        ϕ[irange,jrange] = h5read(filename, "ϕ")
+        b[irange,jrange] = h5read(filename, "b")
+        ωy[irange,jrange] = h5read(filename, "ωy")
       end
     end
     m = 1.5e-1
     imsave(@sprintf("fig/u/%010d.png", k), Array(u'), origin="lower", vmin=-m, vmax=m, cmap="RdBu_r")
     imsave(@sprintf("fig/w/%010d.png", k), Array(w'), origin="lower", vmin=-m, vmax=m, cmap="RdBu_r")
     imsave(@sprintf("fig/ϕ/%010d.png", k), Array(ϕ'), origin="lower")
-    figure(figsize=(9.6, 4.8))
-    PyPlot.axes(aspect=1)
-    contour(Array(b'), levels=0 : 1e-8*4000 : 1e-6*4000)
-    savefig(@sprintf("fig/b/%010d.png", k), dpi=300)
-    close()
-    #imsave(@sprintf("fig/b/%010d.png", k), Array(b'), origin="lower")
+#    figure(figsize=(9.6, 4.8))
+#    PyPlot.axes(aspect=1)
+#    contour(Array(b'), levels=0 : 1e-8*4000 : 1e-6*4000)
+#    savefig(@sprintf("fig/b/%010d.png", k), dpi=300)
+#    close()
+    imsave(@sprintf("fig/b/%010d.png", k), Array(b'), origin="lower")
     imsave(@sprintf("fig/ωy/%010d.png", k), Array(ωy'), origin="lower")
 #    # print conservation diagnostics
 #    println(@sprintf("%16.10e", mass(ϕ, maski, maskx, masky)))

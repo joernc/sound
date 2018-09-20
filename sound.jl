@@ -7,7 +7,6 @@
 # - allow stress BC (need to modify rotational split)
 # - organize channels better?
 # - type annotations for better performance?
-# - save as HDF5 files
 
 @everywhere using Printf
 @everywhere using HDF5
@@ -68,17 +67,17 @@ end
   for i = 2:nx-1
     for j = 1:nz
       if maskx[i,j] == 1 # interior
-	u[i,j] = (up[i-1,j] + up[i+1,j])/2 + 1/2c*(ϕp[i-1,j] - ϕp[i+1,j])
-	ϕ[i,j] = (ϕp[i-1,j] + ϕp[i+1,j])/2 + c/2*(up[i-1,j] - up[i+1,j])
-	b[i,j] = ϕp[i,j]*bp[i,j]/ϕ[i,j]
+        u[i,j] = (up[i-1,j] + up[i+1,j])/2 + 1/2c*(ϕp[i-1,j] - ϕp[i+1,j])
+        ϕ[i,j] = (ϕp[i-1,j] + ϕp[i+1,j])/2 + c/2*(up[i-1,j] - up[i+1,j])
+        b[i,j] = ϕp[i,j]*bp[i,j]/ϕ[i,j]
       elseif maskx[i,j] == 2 # western boundary
-	u[i,j] = 0.
-	ϕ[i,j] = ϕp[i+1,j] - c*up[i+1,j]
-	b[i,j] = ϕp[i,j]*bp[i,j]/ϕ[i,j]
+        u[i,j] = 0.
+        ϕ[i,j] = ϕp[i+1,j] - c*up[i+1,j]
+        b[i,j] = ϕp[i,j]*bp[i,j]/ϕ[i,j]
       elseif maskx[i,j] == 3 # eastern boundary
-	u[i,j] = 0.
-	ϕ[i,j] = ϕp[i-1,j] + c*up[i-1,j]
-	b[i,j] = ϕp[i,j]*bp[i,j]/ϕ[i,j]
+        u[i,j] = 0.
+        ϕ[i,j] = ϕp[i-1,j] + c*up[i-1,j]
+        b[i,j] = ϕp[i,j]*bp[i,j]/ϕ[i,j]
       end
     end
   end
@@ -100,17 +99,17 @@ end
   for i = 1:nx
     for j = 2:nz-1
       if maskz[i,j] == 1 # interior
-	w[i,j] = (wp[i,j-1] + wp[i,j+1])/2 + μ/2c*(ϕp[i,j-1] - ϕp[i,j+1])
-	ϕ[i,j] = (ϕp[i,j-1] + ϕp[i,j+1])/2 + c/2μ*(wp[i,j-1] - wp[i,j+1])
-	b[i,j] = ϕp[i,j]*bp[i,j]/ϕ[i,j]
+        w[i,j] = (wp[i,j-1] + wp[i,j+1])/2 + μ/2c*(ϕp[i,j-1] - ϕp[i,j+1])
+        ϕ[i,j] = (ϕp[i,j-1] + ϕp[i,j+1])/2 + c/2μ*(wp[i,j-1] - wp[i,j+1])
+        b[i,j] = ϕp[i,j]*bp[i,j]/ϕ[i,j]
       elseif maskz[i,j] == 2 # bottom boundary
-	w[i,j] = 0.
-	ϕ[i,j] = ϕp[i,j+1] - c/μ*wp[i,j+1]
-	b[i,j] = ϕp[i,j]*bp[i,j]/ϕ[i,j]
+        w[i,j] = 0.
+        ϕ[i,j] = ϕp[i,j+1] - c/μ*wp[i,j+1]
+        b[i,j] = ϕp[i,j]*bp[i,j]/ϕ[i,j]
       elseif maskz[i,j] == 3 # top boundary
-	w[i,j] = 0.
-	ϕ[i,j] = ϕp[i,j-1] + c/μ*wp[i,j-1]
-	b[i,j] = ϕp[i,j]*bp[i,j]/ϕ[i,j]
+        w[i,j] = 0.
+        ϕ[i,j] = ϕp[i,j-1] + c/μ*wp[i,j-1]
+        b[i,j] = ϕp[i,j]*bp[i,j]/ϕ[i,j]
       end
     end
   end
@@ -134,14 +133,14 @@ end
   for i = 2:nx-1
     for j = 1:nz
       if maskx[i,j] == 1 # interior
-	ui[i,j] = up[i,j]
-	bi[i,j] = bp[i,j] + c/8*((bp[i-1,j] + bp[i,j])*(up[i-1,j] + up[i,j]) - (bp[i,j] + bp[i+1,j])*(up[i,j] + up[i+1,j]))/ϕ[i,j]
+        ui[i,j] = up[i,j]
+        bi[i,j] = bp[i,j] + c/8*((bp[i-1,j] + bp[i,j])*(up[i-1,j] + up[i,j]) - (bp[i,j] + bp[i+1,j])*(up[i,j] + up[i+1,j]))/ϕ[i,j]
       elseif (maskx[i,j] == 2) # western boundary
-	ui[i,j] = 0.
-	bi[i,j] = bp[i,j] + c/4*(-(bp[i,j] + bp[i+1,j])*up[i+1,j])/ϕ[i,j]
+        ui[i,j] = 0.
+        bi[i,j] = bp[i,j] + c/4*(-(bp[i,j] + bp[i+1,j])*up[i+1,j])/ϕ[i,j]
       elseif (maskx[i,j] == 3) # eastern boundary
-	ui[i,j] = 0.
-	bi[i,j] = bp[i,j] + c/4*((bp[i-1,j] + bp[i,j])*up[i-1,j])/ϕ[i,j]
+        ui[i,j] = 0.
+        bi[i,j] = bp[i,j] + c/4*((bp[i-1,j] + bp[i,j])*up[i-1,j])/ϕ[i,j]
       end
     end
   end
@@ -152,14 +151,14 @@ end
   for i = 2:nx-1
     for j = 1:nz
       if maskx[i,j] == 1 # interior
-	u[i,j] = up[i,j]
-	b[i,j] = bp[i,j] + c/4*((bi[i-1,j] + bi[i,j])*(ui[i-1,j] + ui[i,j]) - (bi[i,j] + bi[i+1,j])*(ui[i,j] + ui[i+1,j]))/ϕ[i,j]
+        u[i,j] = up[i,j]
+        b[i,j] = bp[i,j] + c/4*((bi[i-1,j] + bi[i,j])*(ui[i-1,j] + ui[i,j]) - (bi[i,j] + bi[i+1,j])*(ui[i,j] + ui[i+1,j]))/ϕ[i,j]
       elseif (maskx[i,j] == 2) # west boundary
-	u[i,j] = 0.
-	b[i,j] = bp[i,j] + c/2*(-(bi[i,j] + bi[i+1,j])*ui[i+1,j])/ϕ[i,j]
+        u[i,j] = 0.
+        b[i,j] = bp[i,j] + c/2*(-(bi[i,j] + bi[i+1,j])*ui[i+1,j])/ϕ[i,j]
       elseif (maskx[i,j] == 3) # east boundary
-	u[i,j] = 0.
-	b[i,j] = bp[i,j] + c/2*((bi[i-1,j] + bi[i,j])*ui[i-1,j])/ϕ[i,j]
+        u[i,j] = 0.
+        b[i,j] = bp[i,j] + c/2*((bi[i-1,j] + bi[i,j])*ui[i-1,j])/ϕ[i,j]
       end
     end
   end
@@ -168,7 +167,7 @@ end
   exchangex!(b, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
 end
 
-# buoyancy split (z-direction, gravity) !!! check aspect ratio modification !!!
+# buoyancy split (z-direction, gravity)
 @everywhere function Tz!(w, ϕ, b, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
   # tile size
   nx, nz = size(w)
@@ -182,14 +181,14 @@ end
   for i = 1:nx
     for j = 2:nz-1
       if maskz[i,j] == 1 # interior
-	wi[i,j] = wp[i,j] + μ^2*Δt/8*(bp[i,j-1] + 2bp[i,j] + bp[i,j+1])
-	bi[i,j] = bp[i,j] + c/8μ*((bp[i,j-1] + bp[i,j])*(wp[i,j-1] + wp[i,j]) - (bp[i,j] + bp[i,j+1])*(wp[i,j] + wp[i,j+1]))/ϕ[i,j]
+        wi[i,j] = wp[i,j] + μ^2*Δt/8*(bp[i,j-1] + 2bp[i,j] + bp[i,j+1])
+        bi[i,j] = bp[i,j] + c/8μ*((bp[i,j-1] + bp[i,j])*(wp[i,j-1] + wp[i,j]) - (bp[i,j] + bp[i,j+1])*(wp[i,j] + wp[i,j+1]))/ϕ[i,j]
       elseif maskz[i,j] == 2 # bottom boundary
-	wi[i,j] = 0.
-	bi[i,j] = bp[i,j] + c/4μ*(-(bp[i,j] + bp[i,j+1])*wp[i,j+1])/ϕ[i,j]
+        wi[i,j] = 0.
+        bi[i,j] = bp[i,j] + c/4μ*(-(bp[i,j] + bp[i,j+1])*wp[i,j+1])/ϕ[i,j]
       elseif maskz[i,j] == 3 # top boundary
-	wi[i,j] = 0.
-	bi[i,j] = bp[i,j] + c/4μ*((bp[i,j-1] + bp[i,j])*wp[i,j-1])/ϕ[i,j]
+        wi[i,j] = 0.
+        bi[i,j] = bp[i,j] + c/4μ*((bp[i,j-1] + bp[i,j])*wp[i,j-1])/ϕ[i,j]
       end
     end
   end
@@ -200,14 +199,14 @@ end
   for i = 1:nx
     for j = 2:nz-1
       if maskz[i,j] == 1 # interior
-	w[i,j] = wp[i,j] + μ^2*Δt/4*(bi[i,j-1] + 2bi[i,j] + bi[i,j+1])
-	b[i,j] = bp[i,j] + c/4μ*((bi[i,j-1] + bi[i,j])*(wi[i,j-1] + wi[i,j]) - (bi[i,j] + bi[i,j+1])*(wi[i,j] + wi[i,j+1]))/ϕ[i,j]
+        w[i,j] = wp[i,j] + μ^2*Δt/4*(bi[i,j-1] + 2bi[i,j] + bi[i,j+1])
+        b[i,j] = bp[i,j] + c/4μ*((bi[i,j-1] + bi[i,j])*(wi[i,j-1] + wi[i,j]) - (bi[i,j] + bi[i,j+1])*(wi[i,j] + wi[i,j+1]))/ϕ[i,j]
       elseif maskz[i,j] == 2 # bottom boundary
-	w[i,j] = 0.
-	b[i,j] = bp[i,j] + c/2μ*(-(bi[i,j] + bi[i,j+1])*wi[i,j+1])/ϕ[i,j]
+        w[i,j] = 0.
+        b[i,j] = bp[i,j] + c/2μ*(-(bi[i,j] + bi[i,j+1])*wi[i,j+1])/ϕ[i,j]
       elseif maskz[i,j] == 3 # top boundary
-	w[i,j] = 0.
-	b[i,j] = bp[i,j] + c/2μ*((bi[i,j-1] + bi[i,j])*wi[i,j-1])/ϕ[i,j]
+        w[i,j] = 0.
+        b[i,j] = bp[i,j] + c/2μ*((bi[i,j-1] + bi[i,j])*wi[i,j-1])/ϕ[i,j]
       end
     end
   end
@@ -218,7 +217,7 @@ end
 
 # rotation split (in x–z plane)
 @everywhere function Ry!(u, w, ϕ, maski, chan_send_w, chan_send_e, chan_send_b, chan_send_t,
-			chan_receive_w, chan_receive_e, chan_receive_b, chan_receive_t)
+                        chan_receive_w, chan_receive_e, chan_receive_b, chan_receive_t)
   # tile size
   nx, nz = size(u)
   # fields at initial time
@@ -228,12 +227,12 @@ end
   for i = 2:nx-1
     for j = 2:nz-1
       if maski[i,j] # interior
-	ωy = (up[i,j+1] - up[i,j-1])/2Δx - (wp[i+1,j] + wp[i-1,j])/2Δz # note switched Δ's
+        ωy = (up[i,j+1] - up[i,j-1])/2Δx - (wp[i+1,j] + wp[i-1,j])/2Δz # note switched Δ's
         γy = ωy*Δt*c^2/ϕ[i,j]
         Cy = (1 - γy.^2/4)/(1 + γy^2/4)
         Sy = γy/(1 + γy^2/4)
         u[i,j] = up[i,j]*Cy - wp[i,j]*Sy/μ
-	w[i,j] = wp[i,j]*Cy + up[i,j]*Sy*μ
+        w[i,j] = wp[i,j]*Cy + up[i,j]*Sy*μ
       end
     end
   end
@@ -259,19 +258,19 @@ end
   for i = 2:nx-1
     for j = 1:nz
       if maskx[i,j] == 1 # interior
-	a[i,j] = (1-2α)*ap[i,j] + α*(ap[i-1,j] + ap[i+1,j])
+        a[i,j] = (1-2α)*ap[i,j] + α*(ap[i-1,j] + ap[i+1,j])
       elseif maskx[i,j] == 2 # west boundary
-	if diri[i,j] # Dirichlet BC
-	  a[i,j] = 0.
-	else # Neumann BC
-	  a[i,j] = (1-2α)*ap[i,j] + 2α*ap[i+1,j]
-	end
+        if diri[i,j] # Dirichlet BC
+          a[i,j] = 0.
+        else # Neumann BC
+          a[i,j] = (1-2α)*ap[i,j] + 2α*ap[i+1,j]
+        end
       elseif maskx[i,j] == 3 # east boundary
-	if diri[i,j] # Dirichlet BC
-	  a[i,j] = 0.
-	else # Neumann BC
-	  a[i,j] = (1-2α)*ap[i,j] + 2α*ap[i-1,j]
-	end
+        if diri[i,j] # Dirichlet BC
+          a[i,j] = 0.
+        else # Neumann BC
+          a[i,j] = (1-2α)*ap[i,j] + 2α*ap[i-1,j]
+        end
       end
     end
   end
@@ -289,19 +288,19 @@ end
   for i = 1:nx
     for j = 2:nz-1
       if maskz[i,j] == 1 # interior
-	a[i,j] = (1-2α)*ap[i,j] + α*(ap[i,j-1] + ap[i,j+1])
+        a[i,j] = (1-2α)*ap[i,j] + α*(ap[i,j-1] + ap[i,j+1])
       elseif maskz[i,j] == 2 # bottom boundary
-	if diri[i,j] # Dirichlet BC
-	  a[i,j] = 0.
-	else # Neumann BC
-	  a[i,j] = (1-2α)*ap[i,j] + 2α*ap[i,j+1]
-	end
+        if diri[i,j] # Dirichlet BC
+          a[i,j] = 0.
+        else # Neumann BC
+          a[i,j] = (1-2α)*ap[i,j] + 2α*ap[i,j+1]
+        end
       elseif maskz[i,j] == 3 # top boundary
-	if diri[i,j] # Dirichlet BC
-	  a[i,j] = 0.
-	else # Neumann BC
-	  a[i,j] = (1-2α)*ap[i,j] + 2α*ap[i,j-1]
-	end
+        if diri[i,j] # Dirichlet BC
+          a[i,j] = 0.
+        else # Neumann BC
+          a[i,j] = (1-2α)*ap[i,j] + 2α*ap[i,j-1]
+        end
       end
     end
   end
@@ -311,7 +310,7 @@ end
 
 # boundary masks (see Fig. 1 in Salmon for a sketch)
 @everywhere function boundary_masks(fluid, chan_send_w, chan_send_e, chan_send_b, chan_send_t,
-				    chan_receive_w, chan_receive_e, chan_receive_b, chan_receive_t)
+                                    chan_receive_w, chan_receive_e, chan_receive_b, chan_receive_t)
   nx, nz = size(fluid)
   maskx = zeros(UInt8, nx, nz)
   maskz = zeros(UInt8, nx, nz)
@@ -319,19 +318,19 @@ end
     for j = 2:nz-1
       # east and west boundaries
       if fluid[i-1,j-1] & fluid[i,j-1] & fluid[i-1,j] & fluid[i,j] # interior
-	maskx[i,j] = 1
+        maskx[i,j] = 1
       elseif (!fluid[i-1,j-1] | !fluid[i-1,j]) & fluid[i,j-1] & fluid[i,j] # western boundary
-	maskx[i,j] = 2
+        maskx[i,j] = 2
       elseif (!fluid[i,j-1] | !fluid[i,j]) & fluid[i-1,j-1] & fluid[i-1,j] # eastern boundary
-	maskx[i,j] = 3
+        maskx[i,j] = 3
       end
       # top and bottom boundaries
       if fluid[i-1,j-1] & fluid[i-1,j] & fluid[i,j-1] & fluid[i,j] # interior
-	maskz[i,j] = 1
+        maskz[i,j] = 1
       elseif (!fluid[i-1,j-1] | !fluid[i,j-1]) & fluid[i-1,j] & fluid[i,j] # bottom boundary
-	maskz[i,j] = 2
+        maskz[i,j] = 2
       elseif (!fluid[i-1,j] | !fluid[i,j]) & fluid[i-1,j-1] & fluid[i,j-1] # top boundary
-	maskz[i,j] = 3
+        maskz[i,j] = 3
       end
     end
   end
@@ -349,7 +348,7 @@ end
 
 # read in fluid mask
 @everywhere function read_topo(irange, jrange, chan_send_w, chan_send_e, chan_send_b, chan_send_t,
-			       chan_receive_w, chan_receive_e, chan_receive_b, chan_receive_t)
+                               chan_receive_w, chan_receive_e, chan_receive_b, chan_receive_t)
   # tile size plus two points padding
   nx = length(irange) + 2
   nz = length(jrange) + 2
@@ -366,16 +365,16 @@ end
   exchangez!(fluid, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
   # interior, x-, and y-masks
   maski, maskx, maskz = boundary_masks(fluid, chan_send_w, chan_send_e, chan_send_b, chan_send_t,
-				       chan_receive_w, chan_receive_e, chan_receive_b, chan_receive_t)
+                                       chan_receive_w, chan_receive_e, chan_receive_b, chan_receive_t)
   return maski, maskx, maskz
 end
 
 # run model on tile
 @everywhere function run_tile(i, j, irange, jrange, steps, chan_send_w, chan_send_e, chan_send_b, chan_send_t,
-			      chan_receive_w, chan_receive_e, chan_receive_b, chan_receive_t)
+                              chan_receive_w, chan_receive_e, chan_receive_b, chan_receive_t)
   # read topography mask
   maski, maskx, maskz = read_topo(irange, jrange, chan_send_w, chan_send_e, chan_send_b, chan_send_t,
-				  chan_receive_w, chan_receive_e, chan_receive_b, chan_receive_t)
+                                  chan_receive_w, chan_receive_e, chan_receive_b, chan_receive_t)
   # initialization
   nx = length(irange) + 2
   nz = length(jrange) + 2
@@ -406,21 +405,12 @@ end
       bs[((maskx .== 0) .& (maskz .== 0))[2:nx-1, 2:nz-1]] .= NaN
       ωy[.!maski[2:nx-1,2:nz-1]] .= NaN
       # save data
-      open(@sprintf("data/u/%1d_%1d_%010d", i, j, k-1), "w") do file
-	write(file, us)
-      end
-      open(@sprintf("data/w/%1d_%1d_%010d", i, j, k-1), "w") do file
-	write(file, ws)
-      end
-      open(@sprintf("data/ϕ/%1d_%1d_%010d", i, j, k-1), "w") do file
-	write(file, ϕs)
-      end
-      open(@sprintf("data/b/%1d_%1d_%010d", i, j, k-1), "w") do file
-	write(file, bs)
-      end
-      open(@sprintf("data/ωy/%1d_%1d_%010d", i, j, k-1), "w") do file
-	write(file, ωy)
-      end
+      filename = @sprintf("data/%010d_%1d_%1d.h5", k-1, i, j)
+      h5write(filename, "u", us)
+      h5write(filename, "w", ws)
+      h5write(filename, "ϕ", ϕs)
+      h5write(filename, "b", bs)
+      h5write(filename, "ωy", ωy)
     end
     # Strang splitting
     Dx!(u, maskx, diriu, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
@@ -431,7 +421,7 @@ end
     Dz!(b, maskz, dirib, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
     F!((2k-1.5)*Δt, u)
     Ry!(u, w, ϕ, maski, chan_send_w, chan_send_e, chan_send_b, chan_send_t,
-	chan_receive_w, chan_receive_e, chan_receive_b, chan_receive_t)
+        chan_receive_w, chan_receive_e, chan_receive_b, chan_receive_t)
     Tx!(u, ϕ, b, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
     Sx!(u, ϕ, b, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
     Sz!(w, ϕ, b, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
@@ -455,7 +445,7 @@ end
 
 # get index ranges for tiles
 tile_range(i, j, tile_sizes) = [sum(tile_sizes[1][1:i-1])+1:sum(tile_sizes[1][1:i]),
-				sum(tile_sizes[2][1:j-1])+1:sum(tile_sizes[2][1:j])]
+                                sum(tile_sizes[2][1:j-1])+1:sum(tile_sizes[2][1:j])]
 
 # run the model
 function run_model(steps, tile_sizes)
@@ -476,7 +466,7 @@ function run_model(steps, tile_sizes)
       p = workers()[worker_no]
       println(p, ": ", i, " ", j, " ", irange, " ", jrange)
       a[i,j] = @spawnat p run_tile(i, j, irange, jrange, steps, chan_w[i,j], chan_e[i,j], chan_b[i,j], chan_t[i,j],
-				   chan_e[mod1(i-1,ni),j], chan_w[mod1(i+1,ni),j], chan_t[i,mod1(j-1,nj)], chan_b[i,mod1(j+1,nj)])
+                                   chan_e[mod1(i-1,ni),j], chan_w[mod1(i+1,ni),j], chan_t[i,mod1(j-1,nj)], chan_b[i,mod1(j+1,nj)])
     end
   end
   # wait for results
