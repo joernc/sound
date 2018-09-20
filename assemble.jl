@@ -12,36 +12,41 @@ function assemble(steps, tile_sizes)
   for k in steps
     println(k)
     u = Array{Float64}(undef, sum(tile_sizes[1]), sum(tile_sizes[2]))
-    v = Array{Float64}(undef, sum(tile_sizes[1]), sum(tile_sizes[2]))
+    w = Array{Float64}(undef, sum(tile_sizes[1]), sum(tile_sizes[2]))
     ϕ = Array{Float64}(undef, sum(tile_sizes[1]), sum(tile_sizes[2]))
     b = Array{Float64}(undef, sum(tile_sizes[1]), sum(tile_sizes[2]))
-    ωz = Array{Float64}(undef, sum(tile_sizes[1]), sum(tile_sizes[2]))
+    ωy = Array{Float64}(undef, sum(tile_sizes[1]), sum(tile_sizes[2]))
     for i in 1:ni
       for j in 1:nj
 	irange, jrange = tile_range(i, j, tile_sizes)
-	open(@sprintf("sound/data/u/%1d_%1d_%010d", i, j, k), "r") do file
+	open(@sprintf("data/u/%1d_%1d_%010d", i, j, k), "r") do file
 	  u[irange,jrange] = [read(file, Float64) for ii in irange, jj in jrange]
 	end
-	open(@sprintf("sound/data/v/%1d_%1d_%010d", i, j, k), "r") do file
-	  v[irange,jrange] = [read(file, Float64) for ii in irange, jj in jrange]
+	open(@sprintf("data/w/%1d_%1d_%010d", i, j, k), "r") do file
+	  w[irange,jrange] = [read(file, Float64) for ii in irange, jj in jrange]
 	end
-	open(@sprintf("sound/data/ϕ/%1d_%1d_%010d", i, j, k), "r") do file
+	open(@sprintf("data/ϕ/%1d_%1d_%010d", i, j, k), "r") do file
 	  ϕ[irange,jrange] = [read(file, Float64) for ii in irange, jj in jrange]
 	end
-	open(@sprintf("sound/data/b/%1d_%1d_%010d", i, j, k), "r") do file
+	open(@sprintf("data/b/%1d_%1d_%010d", i, j, k), "r") do file
 	  b[irange,jrange] = [read(file, Float64) for ii in irange, jj in jrange]
 	end
-	open(@sprintf("sound/data/ωz/%1d_%1d_%010d", i, j, k), "r") do file
-	  ωz[irange,jrange] = [read(file, Float64) for ii in irange, jj in jrange]
+	open(@sprintf("data/ωy/%1d_%1d_%010d", i, j, k), "r") do file
+	  ωy[irange,jrange] = [read(file, Float64) for ii in irange, jj in jrange]
 	end
       end
     end
-    m = 2.
-    imsave(@sprintf("sound/fig/u/%010d.png", k), Array(u'), origin="lower", vmin=-m, vmax=m, cmap="RdBu_r")
-    imsave(@sprintf("sound/fig/v/%010d.png", k), Array(v'), origin="lower", vmin=-m, vmax=m, cmap="RdBu_r")
-    imsave(@sprintf("sound/fig/ϕ/%010d.png", k), Array(ϕ'), origin="lower")
-    imsave(@sprintf("sound/fig/b/%010d.png", k), Array(b'), origin="lower")
-    imsave(@sprintf("sound/fig/ωz/%010d.png", k), Array(ωz'), origin="lower")
+    m = 1.5e-1
+    imsave(@sprintf("fig/u/%010d.png", k), Array(u'), origin="lower", vmin=-m, vmax=m, cmap="RdBu_r")
+    imsave(@sprintf("fig/w/%010d.png", k), Array(w'), origin="lower", vmin=-m, vmax=m, cmap="RdBu_r")
+    imsave(@sprintf("fig/ϕ/%010d.png", k), Array(ϕ'), origin="lower")
+    figure(figsize=(9.6, 4.8))
+    PyPlot.axes(aspect=1)
+    contour(Array(b'), levels=0 : 1e-8*4000 : 1e-6*4000)
+    savefig(@sprintf("fig/b/%010d.png", k), dpi=300)
+    close()
+    #imsave(@sprintf("fig/b/%010d.png", k), Array(b'), origin="lower")
+    imsave(@sprintf("fig/ωy/%010d.png", k), Array(ωy'), origin="lower")
 #    # print conservation diagnostics
 #    println(@sprintf("%16.10e", mass(ϕ, maski, maskx, masky)))
 #    println(@sprintf("%16.10e", energy(u, v, ϕ, b, y, maski, maskx, masky)))
