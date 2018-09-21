@@ -10,7 +10,7 @@ tile_range(i, j, tile_sizes) = [sum(tile_sizes[1][1:i-1])+1:sum(tile_sizes[1][1:
                                 sum(tile_sizes[2][1:j-1])+1:sum(tile_sizes[2][1:j])]
 
 # assemble and plot results
-function assemble(steps, tile_sizes)
+function assemble(steps, tile_sizes, m)
   ni = length(tile_sizes[1])
   nj = length(tile_sizes[2])
   for k in steps
@@ -29,7 +29,6 @@ function assemble(steps, tile_sizes)
         b[irange,jrange] = h5read(filename, "b")
       end
     end
-    m = 1e-2
     imsave(@sprintf("fig/u/%010d.png", k), Array(u'), origin="lower", vmin=-m, vmax=m, cmap="RdBu_r")
     imsave(@sprintf("fig/w/%010d.png", k), Array(w'), origin="lower", vmin=-m, vmax=m, cmap="RdBu_r")
     imsave(@sprintf("fig/ϕ/%010d.png", k), Array(ϕ'), origin="lower")
@@ -37,7 +36,7 @@ function assemble(steps, tile_sizes)
     figure(figsize=(9.6, 4.8))
     PyPlot.axes(aspect=1)
     imshow(Array(u'), vmin=-m, vmax=m, origin="lower", cmap="RdBu_r")
-    contour(Array(b'), levels=0:1e-8*4000:2e-6*4000, colors="black", linewidths=.75)
+    contour(Array(b'), levels=0:1e-8*1000:2e-6*1000, colors="black", linewidths=.75)
     savefig(@sprintf("fig/b/%010d.svg", k), dpi=300)
     close()
 #    # print conservation diagnostics

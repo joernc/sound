@@ -13,10 +13,10 @@
 
 # grid spacing
 @everywhere const Δx = 60e3/1024
-@everywhere const Δz = 4000/512
+@everywhere const Δz = 1000/512
 
 # vertical viscosity/diffusion
-@everywhere const ν = 1e-1
+@everywhere const ν = 1e-2
 
 # forcing amplitude and frequency
 @everywhere const u0 = .025
@@ -359,10 +359,11 @@ end
   # tile size plus two points padding
   nx = length(irange) + 2
   nz = length(jrange) + 2
-  # read from file
-  full_mask = trues(1024, 512)
-  full_mask[385:640,1:128] = h5read("julia_128_256.h5", "m") .> .5
-  # add solid boundary at top
+  # read abyssal hill topography from file
+  b = reshape(h5read("abyssal.h5", "b"), (1024, 1))
+  z = [(j-1)*Δz for i = 1:1024, j = 1:512]
+  full_mask = z .> b .- minimum(b)
+  # add solid boundary at the top
   full_mask[:,end] .= false
   # assign to tile
   fluid = Array{Bool}(undef, nx, nz)
