@@ -22,8 +22,11 @@
 @everywhere const u0 = .025
 @everywhere const ω = 1.4e-4
 
-# initial stratification
+# background stratification
 @everywhere const N = 1e-3
+
+# slope angle
+@everywhere const θ = 2e-3
 
 # sound speed
 @everywhere const c = 1.
@@ -133,8 +136,9 @@ end
   for i = 2:nx-1
     for j = 1:nz
       if maskx[i,j] == 1 # interior
-        ui[i,j] = up[i,j]
-        bi[i,j] = bp[i,j] + c/8*((bp[i-1,j] + bp[i,j])*(up[i-1,j] + up[i,j]) - (bp[i,j] + bp[i+1,j])*(up[i,j] + up[i+1,j]))/ϕ[i,j]
+        ui[i,j] = up[i,j] + Δt/8*(bp[i-1,j] + 2bp[i,j] + bp[i+1,j])*sin(θ)
+        bi[i,j] = bp[i,j] + (c/8*((bp[i-1,j] + bp[i,j])*(up[i-1,j] + up[i,j]) - (bp[i,j] + bp[i+1,j])*(up[i,j] + up[i+1,j]))
+                             - Δt/2*up[i,j]*N^2*sin(θ))/ϕ[i,j]
       elseif (maskx[i,j] == 2) # western boundary
         ui[i,j] = 0.
         bi[i,j] = bp[i,j] + c/4*(-(bp[i,j] + bp[i+1,j])*up[i+1,j])/ϕ[i,j]
@@ -151,8 +155,9 @@ end
   for i = 2:nx-1
     for j = 1:nz
       if maskx[i,j] == 1 # interior
-        u[i,j] = up[i,j]
-        b[i,j] = bp[i,j] + c/4*((bi[i-1,j] + bi[i,j])*(ui[i-1,j] + ui[i,j]) - (bi[i,j] + bi[i+1,j])*(ui[i,j] + ui[i+1,j]))/ϕ[i,j]
+        u[i,j] = up[i,j] + Δt/4*(bi[i-1,j] + 2bi[i,j] + bi[i+1,j])*sin(θ)
+        b[i,j] = bp[i,j] + (c/4*((bi[i-1,j] + bi[i,j])*(ui[i-1,j] + ui[i,j]) - (bi[i,j] + bi[i+1,j])*(ui[i,j] + ui[i+1,j]))
+                            - Δt*ui[i,j]*N^2*sin(θ))/ϕ[i,j]
       elseif (maskx[i,j] == 2) # west boundary
         u[i,j] = 0.
         b[i,j] = bp[i,j] + c/2*(-(bi[i,j] + bi[i+1,j])*ui[i+1,j])/ϕ[i,j]
@@ -181,8 +186,9 @@ end
   for i = 1:nx
     for j = 2:nz-1
       if maskz[i,j] == 1 # interior
-        wi[i,j] = wp[i,j] + μ^2*Δt/8*(bp[i,j-1] + 2bp[i,j] + bp[i,j+1])
-        bi[i,j] = bp[i,j] + c/8μ*((bp[i,j-1] + bp[i,j])*(wp[i,j-1] + wp[i,j]) - (bp[i,j] + bp[i,j+1])*(wp[i,j] + wp[i,j+1]))/ϕ[i,j]
+        wi[i,j] = wp[i,j] + μ^2*Δt/8*(bp[i,j-1] + 2bp[i,j] + bp[i,j+1])*cos(θ)
+        bi[i,j] = bp[i,j] + (c/8μ*((bp[i,j-1] + bp[i,j])*(wp[i,j-1] + wp[i,j]) - (bp[i,j] + bp[i,j+1])*(wp[i,j] + wp[i,j+1]))
+                             - Δt/2*wp[i,j]*N^2*cos(θ))/ϕ[i,j]
       elseif maskz[i,j] == 2 # bottom boundary
         wi[i,j] = 0.
         bi[i,j] = bp[i,j] + c/4μ*(-(bp[i,j] + bp[i,j+1])*wp[i,j+1])/ϕ[i,j]
@@ -199,8 +205,9 @@ end
   for i = 1:nx
     for j = 2:nz-1
       if maskz[i,j] == 1 # interior
-        w[i,j] = wp[i,j] + μ^2*Δt/4*(bi[i,j-1] + 2bi[i,j] + bi[i,j+1])
-        b[i,j] = bp[i,j] + c/4μ*((bi[i,j-1] + bi[i,j])*(wi[i,j-1] + wi[i,j]) - (bi[i,j] + bi[i,j+1])*(wi[i,j] + wi[i,j+1]))/ϕ[i,j]
+        w[i,j] = wp[i,j] + μ^2*Δt/4*(bi[i,j-1] + 2bi[i,j] + bi[i,j+1])*cos(θ)
+        b[i,j] = bp[i,j] + (c/4μ*((bi[i,j-1] + bi[i,j])*(wi[i,j-1] + wi[i,j]) - (bi[i,j] + bi[i,j+1])*(wi[i,j] + wi[i,j+1]))
+                            - Δt*wi[i,j]*N^2*cos(θ))/ϕ[i,j]
       elseif maskz[i,j] == 2 # bottom boundary
         w[i,j] = 0.
         b[i,j] = bp[i,j] + c/2μ*(-(bi[i,j] + bi[i,j+1])*wi[i,j+1])/ϕ[i,j]
@@ -217,7 +224,7 @@ end
 
 # rotation split (in x–z plane)
 @everywhere function Ry!(u, w, ϕ, maski, chan_send_w, chan_send_e, chan_send_b, chan_send_t,
-                        chan_receive_w, chan_receive_e, chan_receive_b, chan_receive_t)
+                         chan_receive_w, chan_receive_e, chan_receive_b, chan_receive_t)
   # tile size
   nx, nz = size(u)
   # fields at initial time
@@ -249,7 +256,7 @@ end
 end
 
 # x-diffusion
-@everywhere function Dx!(a, maskx, diri, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+@everywhere function Dx!(a, maskx, diri, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e; flux=0.)
   # tile size
   nx, nz = size(a)
   # field at initial time
@@ -263,13 +270,13 @@ end
         if diri[i,j] # Dirichlet BC
           a[i,j] = 0.
         else # Neumann BC
-          a[i,j] = (1-2α)*ap[i,j] + 2α*ap[i+1,j]
+          a[i,j] = (1-2α)*ap[i,j] + 2α*ap[i+1,j] + 2Δt*flux/Δx
         end
       elseif maskx[i,j] == 3 # east boundary
         if diri[i,j] # Dirichlet BC
           a[i,j] = 0.
         else # Neumann BC
-          a[i,j] = (1-2α)*ap[i,j] + 2α*ap[i-1,j]
+          a[i,j] = (1-2α)*ap[i,j] + 2α*ap[i-1,j] - 2Δt*flux/Δx
         end
       end
     end
@@ -279,7 +286,7 @@ end
 end
 
 # z-diffusion (definition of α takes enhancement by aspect ratio into account)
-@everywhere function Dz!(a, maskz, diri, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+@everywhere function Dz!(a, maskz, diri, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t; flux=0.)
   # tile size
   nx, nz = size(a)
   # field at initial time
@@ -293,13 +300,13 @@ end
         if diri[i,j] # Dirichlet BC
           a[i,j] = 0.
         else # Neumann BC
-          a[i,j] = (1-2α)*ap[i,j] + 2α*ap[i,j+1]
+          a[i,j] = (1-2α)*ap[i,j] + 2α*ap[i,j+1] + 2Δt*flux/Δz
         end
       elseif maskz[i,j] == 3 # top boundary
         if diri[i,j] # Dirichlet BC
           a[i,j] = 0.
         else # Neumann BC
-          a[i,j] = (1-2α)*ap[i,j] + 2α*ap[i,j-1]
+          a[i,j] = (1-2α)*ap[i,j] + 2α*ap[i,j-1] - 2Δt*flux/Δz
         end
       end
     end
@@ -380,46 +387,43 @@ end
   nz = length(jrange) + 2
   u = zeros(nx, nz)
   w = zeros(nx, nz)
+  x = [(i-1)*Δx for i = irange[1]-1:irange[end]+1, j = jrange[1]-1:jrange[end]+1]
   z = [(j-1)*Δz for i = irange[1]-1:irange[end]+1, j = jrange[1]-1:jrange[end]+1]
-  ϕ = c^2*ones(nx, nz) + N^2*z.^2/2
-  b = N^2*z
+  ϕ = c^2*ones(nx, nz)
+  b = zeros(nx, nz)
   # specify where Dirichlet boundary conditions are to be imposed
   diriu = (maskx .> 1) .| (maskz .> 1)
   diriw = (maskx .> 1) .| (maskz .> 1)
   dirib = falses(nx, nz)
   # time steps
   for k = 1:steps
-    if k % 10 == 1
-      println(@sprintf("%6i %9.3e %9.3e", k-1, (k-1)*2Δt, maximum(hypot.(u[2:nx-1,2:nz-1], w[2:nx-1,2:nz-1]))))
+    if k % 100 == 1
+      println(@sprintf("%6i %9.3e %9.3e %9.3e", k-1, (k-1)*2Δt, maximum(abs.(u[2:nx-1,2:nz-1])), maximum(abs.(w[2:nx-1,2:nz-1]))))
       # discard edges
       us = u[2:nx-1,2:nz-1]
       ws = w[2:nx-1,2:nz-1]
       ϕs = ϕ[2:nx-1,2:nz-1]
-      bs = b[2:nx-1,2:nz-1]
-      # calculate vorticity
-      ωy = (u[2:nx-1,3:nz] + u[2:nx-1,1:nz-2])/2Δz - (w[3:nx,2:nz-1] - w[1:nx-2,2:nz-1])/2Δx
+      bs = b[2:nx-1,2:nz-1] + N^2*(x[2:nx-1,2:nz-1]*sin(θ) + z[2:nx-1,2:nz-1]*cos(θ))
       # replace missing values with NaNs
       us[((maskx .== 0) .& (maskz .== 0))[2:nx-1, 2:nz-1]] .= NaN
       ws[((maskx .== 0) .& (maskz .== 0))[2:nx-1, 2:nz-1]] .= NaN
       ϕs[((maskx .== 0) .& (maskz .== 0))[2:nx-1, 2:nz-1]] .= NaN
       bs[((maskx .== 0) .& (maskz .== 0))[2:nx-1, 2:nz-1]] .= NaN
-      ωy[.!maski[2:nx-1,2:nz-1]] .= NaN
       # save data
       filename = @sprintf("data/%010d_%1d_%1d.h5", k-1, i, j)
       h5write(filename, "u", us)
       h5write(filename, "w", ws)
       h5write(filename, "ϕ", ϕs)
       h5write(filename, "b", bs)
-      h5write(filename, "ωy", ωy)
     end
     # Strang splitting
     Dx!(u, maskx, diriu, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
     Dx!(w, maskx, diriw, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
-    Dx!(b, maskx, dirib, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+    Dx!(b, maskx, dirib, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e; flux=ν*N^2*sin(θ))
     Dz!(u, maskz, diriu, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
     Dz!(w, maskz, diriw, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
-    Dz!(b, maskz, dirib, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
-    F!((2k-1.5)*Δt, u)
+    Dz!(b, maskz, dirib, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t; flux=ν*N^2*cos(θ))
+    #F!((2k-1.5)*Δt, u)
     Ry!(u, w, ϕ, maski, chan_send_w, chan_send_e, chan_send_b, chan_send_t,
         chan_receive_w, chan_receive_e, chan_receive_b, chan_receive_t)
     Tx!(u, ϕ, b, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
@@ -432,15 +436,14 @@ end
     Tx!(u, ϕ, b, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
     Ry!(u, w, ϕ, maski, chan_send_w, chan_send_e, chan_send_b, chan_send_t,
         chan_receive_w, chan_receive_e, chan_receive_b, chan_receive_t)
-    F!((2k-.5)*Δt, u)
+    #F!((2k-.5)*Δt, u)
     Dz!(u, maskz, diriu, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
     Dz!(w, maskz, diriw, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
-    Dz!(b, maskz, dirib, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+    Dz!(b, maskz, dirib, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t; flux=ν*N^2*cos(θ))
     Dx!(u, maskx, diriu, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
     Dx!(w, maskx, diriw, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
-    Dx!(b, maskx, dirib, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+    Dx!(b, maskx, dirib, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e; flux=ν*N^2*sin(θ))
   end
-  return
 end
 
 # get index ranges for tiles

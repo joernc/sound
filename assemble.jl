@@ -2,6 +2,9 @@ using Printf
 using PyPlot
 using HDF5
 
+pygui(false)
+rc("contour", negative_linestyle="solid")
+
 # get index ranges for tiles
 tile_range(i, j, tile_sizes) = [sum(tile_sizes[1][1:i-1])+1:sum(tile_sizes[1][1:i]),
                                 sum(tile_sizes[2][1:j-1])+1:sum(tile_sizes[2][1:j])]
@@ -16,7 +19,6 @@ function assemble(steps, tile_sizes)
     w = Array{Float64}(undef, sum(tile_sizes[1]), sum(tile_sizes[2]))
     ϕ = Array{Float64}(undef, sum(tile_sizes[1]), sum(tile_sizes[2]))
     b = Array{Float64}(undef, sum(tile_sizes[1]), sum(tile_sizes[2]))
-    ωy = Array{Float64}(undef, sum(tile_sizes[1]), sum(tile_sizes[2]))
     for i in 1:ni
       for j in 1:nj
         irange, jrange = tile_range(i, j, tile_sizes)
@@ -25,20 +27,19 @@ function assemble(steps, tile_sizes)
         w[irange,jrange] = h5read(filename, "w")
         ϕ[irange,jrange] = h5read(filename, "ϕ")
         b[irange,jrange] = h5read(filename, "b")
-        ωy[irange,jrange] = h5read(filename, "ωy")
       end
     end
-    m = 1.5e-1
+    m = 1e-2
     imsave(@sprintf("fig/u/%010d.png", k), Array(u'), origin="lower", vmin=-m, vmax=m, cmap="RdBu_r")
     imsave(@sprintf("fig/w/%010d.png", k), Array(w'), origin="lower", vmin=-m, vmax=m, cmap="RdBu_r")
     imsave(@sprintf("fig/ϕ/%010d.png", k), Array(ϕ'), origin="lower")
-#    figure(figsize=(9.6, 4.8))
-#    PyPlot.axes(aspect=1)
-#    contour(Array(b'), levels=0 : 1e-8*4000 : 1e-6*4000)
-#    savefig(@sprintf("fig/b/%010d.png", k), dpi=300)
-#    close()
-    imsave(@sprintf("fig/b/%010d.png", k), Array(b'), origin="lower")
-    imsave(@sprintf("fig/ωy/%010d.png", k), Array(ωy'), origin="lower")
+#    imsave(@sprintf("fig/b/%010d.png", k), Array(b'), origin="lower")
+    figure(figsize=(9.6, 4.8))
+    PyPlot.axes(aspect=1)
+    imshow(Array(u'), vmin=-m, vmax=m, origin="lower", cmap="RdBu_r")
+    contour(Array(b'), levels=0:1e-8*4000:2e-6*4000, colors="black", linewidths=.75)
+    savefig(@sprintf("fig/b/%010d.svg", k), dpi=300)
+    close()
 #    # print conservation diagnostics
 #    println(@sprintf("%16.10e", mass(ϕ, maski, maskx, masky)))
 #    println(@sprintf("%16.10e", energy(u, v, ϕ, b, y, maski, maskx, masky)))
