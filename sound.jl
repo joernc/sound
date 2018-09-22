@@ -16,7 +16,7 @@
 @everywhere const Δz = 1000/512
 
 # vertical viscosity/diffusion
-@everywhere const ν = 1e-2
+@everywhere const ν = 1e-3
 
 # forcing amplitude and frequency
 @everywhere const u0 = .025
@@ -29,7 +29,7 @@
 @everywhere const θ = 2e-3
 
 # sound speed
-@everywhere const c = 1.
+@everywhere const c = 10.
 
 # time step
 @everywhere const Δt = Δx/c
@@ -138,7 +138,7 @@ end
       if maskx[i,j] == 1 # interior
         ui[i,j] = up[i,j] + Δt/8*(bp[i-1,j] + 2bp[i,j] + bp[i+1,j])*sin(θ)
         bi[i,j] = bp[i,j] + (c/8*((bp[i-1,j] + bp[i,j])*(up[i-1,j] + up[i,j]) - (bp[i,j] + bp[i+1,j])*(up[i,j] + up[i+1,j]))
-                             - Δt/2*up[i,j]*N^2*sin(θ))/ϕ[i,j]
+                             - c^2*Δt/2*up[i,j]*N^2*sin(θ))/ϕ[i,j]
       elseif (maskx[i,j] == 2) # western boundary
         ui[i,j] = 0.
         bi[i,j] = bp[i,j] + c/4*(-(bp[i,j] + bp[i+1,j])*up[i+1,j])/ϕ[i,j]
@@ -157,7 +157,7 @@ end
       if maskx[i,j] == 1 # interior
         u[i,j] = up[i,j] + Δt/4*(bi[i-1,j] + 2bi[i,j] + bi[i+1,j])*sin(θ)
         b[i,j] = bp[i,j] + (c/4*((bi[i-1,j] + bi[i,j])*(ui[i-1,j] + ui[i,j]) - (bi[i,j] + bi[i+1,j])*(ui[i,j] + ui[i+1,j]))
-                            - Δt*ui[i,j]*N^2*sin(θ))/ϕ[i,j]
+                            - c^2*Δt*ui[i,j]*N^2*sin(θ))/ϕ[i,j]
       elseif (maskx[i,j] == 2) # west boundary
         u[i,j] = 0.
         b[i,j] = bp[i,j] + c/2*(-(bi[i,j] + bi[i+1,j])*ui[i+1,j])/ϕ[i,j]
@@ -188,7 +188,7 @@ end
       if maskz[i,j] == 1 # interior
         wi[i,j] = wp[i,j] + μ^2*Δt/8*(bp[i,j-1] + 2bp[i,j] + bp[i,j+1])*cos(θ)
         bi[i,j] = bp[i,j] + (c/8μ*((bp[i,j-1] + bp[i,j])*(wp[i,j-1] + wp[i,j]) - (bp[i,j] + bp[i,j+1])*(wp[i,j] + wp[i,j+1]))
-                             - Δt/2*wp[i,j]*N^2*cos(θ))/ϕ[i,j]
+                             - c^2*Δt/2*wp[i,j]*N^2*cos(θ))/ϕ[i,j]
       elseif maskz[i,j] == 2 # bottom boundary
         wi[i,j] = 0.
         bi[i,j] = bp[i,j] + c/4μ*(-(bp[i,j] + bp[i,j+1])*wp[i,j+1])/ϕ[i,j]
@@ -207,7 +207,7 @@ end
       if maskz[i,j] == 1 # interior
         w[i,j] = wp[i,j] + μ^2*Δt/4*(bi[i,j-1] + 2bi[i,j] + bi[i,j+1])*cos(θ)
         b[i,j] = bp[i,j] + (c/4μ*((bi[i,j-1] + bi[i,j])*(wi[i,j-1] + wi[i,j]) - (bi[i,j] + bi[i,j+1])*(wi[i,j] + wi[i,j+1]))
-                            - Δt*wi[i,j]*N^2*cos(θ))/ϕ[i,j]
+                            - c^2*Δt*wi[i,j]*N^2*cos(θ))/ϕ[i,j]
       elseif maskz[i,j] == 2 # bottom boundary
         w[i,j] = 0.
         b[i,j] = bp[i,j] + c/2μ*(-(bi[i,j] + bi[i,j+1])*wi[i,j+1])/ϕ[i,j]
@@ -306,7 +306,7 @@ end
         if diri[i,j] # Dirichlet BC
           a[i,j] = 0.
         else # Neumann BC
-          a[i,j] = (1-2α)*ap[i,j] + 2α*ap[i,j-1] - 2Δt*flux/Δz
+          a[i,j] = (1-2α)*ap[i,j] + 2α*ap[i,j-1]# - 2Δt*flux/Δz
         end
       end
     end
@@ -371,7 +371,7 @@ end
   # exchange edges
   exchangex!(fluid, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
   exchangez!(fluid, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
-  # interior, x-, and y-masks
+  # interior, x-, and z-masks
   maski, maskx, maskz = boundary_masks(fluid, chan_send_w, chan_send_e, chan_send_b, chan_send_t,
                                        chan_receive_w, chan_receive_e, chan_receive_b, chan_receive_t)
   return maski, maskx, maskz
@@ -424,7 +424,7 @@ end
     Dz!(u, maskz, diriu, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
     Dz!(w, maskz, diriw, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
     Dz!(b, maskz, dirib, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t; flux=ν*N^2*cos(θ))
-    #F!((2k-1.5)*Δt, u)
+    F!((2k-1.5)*Δt, u)
     Ry!(u, w, ϕ, maski, chan_send_w, chan_send_e, chan_send_b, chan_send_t,
         chan_receive_w, chan_receive_e, chan_receive_b, chan_receive_t)
     Tx!(u, ϕ, b, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
@@ -437,7 +437,7 @@ end
     Tx!(u, ϕ, b, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
     Ry!(u, w, ϕ, maski, chan_send_w, chan_send_e, chan_send_b, chan_send_t,
         chan_receive_w, chan_receive_e, chan_receive_b, chan_receive_t)
-    #F!((2k-.5)*Δt, u)
+    F!((2k-.5)*Δt, u)
     Dz!(u, maskz, diriu, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
     Dz!(w, maskz, diriw, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
     Dz!(b, maskz, dirib, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t; flux=ν*N^2*cos(θ))
