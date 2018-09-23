@@ -2,8 +2,6 @@
 # of Sound Waves" (JPO, 2009)
 
 # next steps:
-# - extend to third dimension
-# - allow specification of nonzero BC
 # - allow stress BC (need to modify rotational split)
 # - organize channels better?
 # - type annotations for better performance?
@@ -33,7 +31,7 @@
 @everywhere const θ = 2e-3
 
 # sound speed
-@everywhere const c = 10.
+@everywhere const c = .1
 
 # time step
 @everywhere const Δt = Δx/c
@@ -478,31 +476,42 @@ end
   maskx = Array{UInt8, 3}(undef, nx, ny, nz)
   masky = Array{UInt8, 3}(undef, nx, ny, nz)
   maskz = Array{UInt8, 3}(undef, nx, ny, nz)
+  # find interior points
   for k = 2:nz-1, j = 2:ny-1, i = 2:nx-1
     if all(fluid[i-1:i,j-1:j,k-1:k]) # interior
       maski[i,j,k] = true
+    else # not interior
+      maski[i,j,k] = false
+    end
+  end
+  # exchange edges
+  exchangex!(maski, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+  exchangey!(maski, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+  exchangez!(maski, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+  # find and categorize boundary points
+  for k = 2:nz-1, j = 2:ny-1, i = 2:nx-1
+    if maski[i,j,k] # interior
       maskx[i,j,k] = 1
       masky[i,j,k] = 1
       maskz[i,j,k] = 1
-    else
-      maski[i,j,k] = false
-      if all(fluid[i,j-1:j,k-1:k]) # western boundary
+    else # not interior
+      if maski[i+1,j,k] # western boundary
         maskx[i,j,k] = 2
-      elseif all(fluid[i-1,j-1:j,k-1:k]) # eastern boundary
+      elseif maski[i-1,j,k] # eastern boundary
         maskx[i,j,k] = 3
       else # inside corner or solid
         maskx[i,j,k] = 0
       end
-      if all(fluid[i-1:i,j,k-1:k]) # southern boundary
+      if maski[i,j+1,k] # southern boundary
         masky[i,j,k] = 2
-      elseif all(fluid[i-1:i,j-1,k-1:k]) # northern boundary
+      elseif maski[i,j-1,k] # northern boundary
         masky[i,j,k] = 3
       else # inside corner or solid
         masky[i,j,k] = 0
       end
-      if all(fluid[i-1:i,j-1:j,k]) # bottom boundary
+      if maski[i,j,k+1] # bottom boundary
         maskz[i,j,k] = 2
-      elseif all(fluid[i-1:i,j-1:j,k-1]) # top boundary
+      elseif maski[i,j,k-1] # top boundary
         maskz[i,j,k] = 3
       else # inside corner or solid
         maskz[i,j,k] = 0
@@ -510,15 +519,12 @@ end
     end
   end
   # exchange edges
-  exchangex!(maski, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
   exchangex!(maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
   exchangex!(masky, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
   exchangex!(maskz, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
-  exchangey!(maski, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
   exchangey!(maskx, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
   exchangey!(masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
   exchangey!(maskz, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
-  exchangez!(maski, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
   exchangez!(maskx, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
   exchangez!(masky, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
   exchangez!(maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
@@ -534,7 +540,7 @@ end
   nz = length(krange) + 2
   # read abyssal hill topography from file
   b = reshape(h5read("abyssal.h5", "b"), (1024, 1, 1))
-  z = [(k-1)*Δz for i = 1:1024, j = 1:5, k = 1:512]
+  z = [(k-1)*Δz for i = 1:1024, j = 1:1, k = 1:512]
   full_mask = z .> b .- minimum(b)
   # add solid boundary at the top
   full_mask[:,:,end] .= false
@@ -580,8 +586,6 @@ end
   # time steps
   for n = 1:steps
     if n % 100 == 1
-      println(@sprintf("%6i %9.3e %9.3e %9.3e %9.3e", n-1, (n-1)*2Δt, maximum(abs.(u[2:nx-1,2:ny-1,2:nz-1])),
-                       maximum(abs.(v[2:nx-1,2:ny-1,2:nz-1])), maximum(abs.(w[2:nx-1,2:ny-1,2:nz-1]))))
       # discard edges
       us = u[2:nx-1,2:ny-1,2:nz-1]
       vs = v[2:nx-1,2:ny-1,2:nz-1]
@@ -589,11 +593,12 @@ end
       ϕs = ϕ[2:nx-1,2:ny-1,2:nz-1]
       bs = b[2:nx-1,2:ny-1,2:nz-1]# + N^2*(x[2:nx-1,2:ny-1,2:nz-1]*sin(θ) + z[2:nx-1,2:ny-1,2:nz-1]*cos(θ))
       # replace missing values with NaNs
-      us[((maskx .== 0) .& (masky .== 0) .& (maskz .== 0))[2:nx-1,2:ny-1,2:nz-1]] .= NaN
-      vs[((maskx .== 0) .& (masky .== 0) .& (maskz .== 0))[2:nx-1,2:ny-1,2:nz-1]] .= NaN
-      ws[((maskx .== 0) .& (masky .== 0) .& (maskz .== 0))[2:nx-1,2:ny-1,2:nz-1]] .= NaN
-      ϕs[((maskx .== 0) .& (masky .== 0) .& (maskz .== 0))[2:nx-1,2:ny-1,2:nz-1]] .= NaN
-      bs[((maskx .== 0) .& (masky .== 0) .& (maskz .== 0))[2:nx-1,2:ny-1,2:nz-1]] .= NaN
+      solid = ((maskx .== 0) .& (masky .== 0) .& (maskz .== 0))[2:nx-1,2:ny-1,2:nz-1]
+      us[solid] .= NaN
+      vs[solid] .= NaN
+      ws[solid] .= NaN
+      ϕs[solid] .= NaN
+      bs[solid] .= NaN
       # save data
       filename = @sprintf("data/%010d_%1d_%1d_%1d.h5", n-1, i, j, k)
       h5write(filename, "u", us)
@@ -601,21 +606,24 @@ end
       h5write(filename, "w", ws)
       h5write(filename, "ϕ", ϕs)
       h5write(filename, "b", bs)
+      # screen print
+      println(@sprintf("%6i %9.3e %9.3e %9.3e %9.3e", n-1, (n-1)*2Δt, maximum(abs.(us[.!solid])), maximum(abs.(vs[.!solid])),
+                       maximum(abs.(ws[.!solid]))))
     end
     # Strang splitting
     Dx!(u, maskx, diriu, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
     Dx!(v, maskx, diriv, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
     Dx!(w, maskx, diriw, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
     Dx!(b, maskx, dirib, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e; flux=ν*N^2*sin(θ))
-    Dy!(u, masky, diriu, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
-    Dy!(v, masky, diriv, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
-    Dy!(w, masky, diriw, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
-    Dy!(b, masky, dirib, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+    #Dy!(u, masky, diriu, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+    #Dy!(v, masky, diriv, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+    #Dy!(w, masky, diriw, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+    #Dy!(b, masky, dirib, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
     Dz!(u, maskz, diriu, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
     Dz!(v, maskz, diriv, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
     Dz!(w, maskz, diriw, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
     Dz!(b, maskz, dirib, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t; flux=ν*N^2*cos(θ))
-    F!((2k-1.5)*Δt, u)
+    #F!((2k-1.5)*Δt, u)
     Rx!(v, w, ϕ, maski, chan_send_s, chan_send_n, chan_send_b, chan_send_t,
         chan_receive_s, chan_receive_n, chan_receive_b, chan_receive_t)
     Ry!(u, w, ϕ, maski, chan_send_w, chan_send_e, chan_send_b, chan_send_t,
@@ -624,14 +632,14 @@ end
         chan_receive_w, chan_receive_e, chan_receive_s, chan_receive_n)
     Sx!(u, ϕ, b, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
     Tx!(u, ϕ, b, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
-    Ty!(v, ϕ, b, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
-    Sy!(v, ϕ, b, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+    #Ty!(v, ϕ, b, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+    #Sy!(v, ϕ, b, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
     Sz!(w, ϕ, b, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
     Tz!(w, ϕ, b, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
     Tz!(w, ϕ, b, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
     Sz!(w, ϕ, b, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
-    Sy!(v, ϕ, b, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
-    Ty!(v, ϕ, b, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+    #Sy!(v, ϕ, b, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+    #Ty!(v, ϕ, b, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
     Tx!(u, ϕ, b, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
     Sx!(u, ϕ, b, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
     Rz!(u, v, ϕ, maski, chan_send_w, chan_send_e, chan_send_s, chan_send_n,
@@ -640,15 +648,15 @@ end
         chan_receive_w, chan_receive_e, chan_receive_b, chan_receive_t)
     Rx!(v, w, ϕ, maski, chan_send_s, chan_send_n, chan_send_b, chan_send_t,
         chan_receive_s, chan_receive_n, chan_receive_b, chan_receive_t)
-    F!((2k-.5)*Δt, u)
+    #F!((2k-.5)*Δt, u)
     Dz!(u, maskz, diriu, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
     Dz!(v, maskz, diriv, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
     Dz!(w, maskz, diriw, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
     Dz!(b, maskz, dirib, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t; flux=ν*N^2*cos(θ))
-    Dy!(u, masky, diriu, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
-    Dy!(v, masky, diriv, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
-    Dy!(w, masky, diriw, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
-    Dy!(b, masky, dirib, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+    #Dy!(u, masky, diriu, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+    #Dy!(v, masky, diriv, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+    #Dy!(w, masky, diriw, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+    #Dy!(b, masky, dirib, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
     Dx!(u, maskx, diriu, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
     Dx!(v, maskx, diriv, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
     Dx!(w, maskx, diriw, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
