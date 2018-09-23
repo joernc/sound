@@ -6,39 +6,45 @@ pygui(false)
 rc("contour", negative_linestyle="solid")
 
 # get index ranges for tiles
-tile_range(i, j, tile_sizes) = [sum(tile_sizes[1][1:i-1])+1:sum(tile_sizes[1][1:i]),
-                                sum(tile_sizes[2][1:j-1])+1:sum(tile_sizes[2][1:j])]
+tile_range(i, j, k, tile_sizes) = [sum(tile_sizes[1][1:i-1])+1:sum(tile_sizes[1][1:i]),
+                                   sum(tile_sizes[2][1:j-1])+1:sum(tile_sizes[2][1:j]),
+                                   sum(tile_sizes[3][1:k-1])+1:sum(tile_sizes[3][1:k])]
 
 # assemble and plot results
-function assemble(steps, tile_sizes, m)
+function assemble(steps, tile_sizes, mu, mv, mw)
   ni = length(tile_sizes[1])
   nj = length(tile_sizes[2])
-  for k in steps
-    println(k)
-    u = Array{Float64}(undef, sum(tile_sizes[1]), sum(tile_sizes[2]))
-    w = Array{Float64}(undef, sum(tile_sizes[1]), sum(tile_sizes[2]))
-    ϕ = Array{Float64}(undef, sum(tile_sizes[1]), sum(tile_sizes[2]))
-    b = Array{Float64}(undef, sum(tile_sizes[1]), sum(tile_sizes[2]))
-    for i in 1:ni
-      for j in 1:nj
-        irange, jrange = tile_range(i, j, tile_sizes)
-        filename = @sprintf("data/%010d_%1d_%1d.h5", k, i, j)
-        u[irange,jrange] = h5read(filename, "u")
-        w[irange,jrange] = h5read(filename, "w")
-        ϕ[irange,jrange] = h5read(filename, "ϕ")
-        b[irange,jrange] = h5read(filename, "b")
-      end
+  nk = length(tile_sizes[2])
+  for n in steps
+    println(n)
+    nx = sum(tile_sizes[1])
+    ny = sum(tile_sizes[2])
+    nz = sum(tile_sizes[3])
+    u = Array{Float64, 3}(undef, nx, ny, nz)
+    v = Array{Float64, 3}(undef, nx, ny, nz)
+    w = Array{Float64, 3}(undef, nx, ny, nz)
+    ϕ = Array{Float64, 3}(undef, nx, ny, nz)
+    b = Array{Float64, 3}(undef, nx, ny, nz)
+    for k = 1:nk, j = 1:nj, i = 1:ni
+      irange, jrange, krange = tile_range(i, j, k, tile_sizes)
+      filename = @sprintf("data/%010d_%1d_%1d_%1d.h5", n, i, j, k)
+      u[irange,jrange,krange] = h5read(filename, "u")
+      v[irange,jrange,krange] = h5read(filename, "v")
+      w[irange,jrange,krange] = h5read(filename, "w")
+      ϕ[irange,jrange,krange] = h5read(filename, "ϕ")
+      b[irange,jrange,krange] = h5read(filename, "b")
     end
-    imsave(@sprintf("fig/u/%010d.png", k), Array(u'), origin="lower", vmin=-m, vmax=m, cmap="RdBu_r")
-    imsave(@sprintf("fig/w/%010d.png", k), Array(w'), origin="lower", vmin=-m, vmax=m, cmap="RdBu_r")
-    imsave(@sprintf("fig/ϕ/%010d.png", k), Array(ϕ'), origin="lower")
-    #imsave(@sprintf("fig/b/%010d.png", k), Array(b'), origin="lower")
-    figure(figsize=(9.6, 4.8))
-    PyPlot.axes(aspect=1)
-    imshow(Array(u'), vmin=-m, vmax=m, origin="lower", cmap="RdBu_r")
-    contour(Array(b'), levels=0:1e-8*1000:2e-6*1000, colors="black", linewidths=.75)
-    savefig(@sprintf("fig/b/%010d.svg", k), dpi=300)
-    close()
+    imsave(@sprintf("fig/u/%010d.png", n), Array(u[:,1,:]'), origin="lower", vmin=-mu, vmax=mu, cmap="RdBu_r")
+    imsave(@sprintf("fig/v/%010d.png", n), Array(v[:,1,:]'), origin="lower", vmin=-mv, vmax=mv, cmap="RdBu_r")
+    imsave(@sprintf("fig/w/%010d.png", n), Array(w[:,1,:]'), origin="lower", vmin=-mw, vmax=mw, cmap="RdBu_r")
+    imsave(@sprintf("fig/ϕ/%010d.png", n), Array(ϕ[:,1,:]'), origin="lower")
+    imsave(@sprintf("fig/b/%010d.png", n), Array(b[:,1,:]'), origin="lower")
+#    figure(figsize=(9.6, 4.8))
+#    PyPlot.axes(aspect=1)
+#    imshow(Array(u'), vmin=-m, vmax=m, origin="lower", cmap="RdBu_r")
+#    contour(Array(b'), levels=0:1e-8*1000:2e-6*1000, colors="black", linewidths=.75)
+#    savefig(@sprintf("fig/b/%010d.svg", k), dpi=300)
+#    close()
 #    # print conservation diagnostics
 #    println(@sprintf("%16.10e", mass(ϕ, maski, maskx, masky)))
 #    println(@sprintf("%16.10e", energy(u, v, ϕ, b, y, maski, maskx, masky)))
