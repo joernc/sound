@@ -6,6 +6,10 @@ const Δx = 60e3/1024
 const Δy = Δx
 const Δz = 1000/512
 
+const c = .1
+
+const μ = Δz/Δx
+
 # background stratification
 const N = 1e-3
 
@@ -31,6 +35,21 @@ function assemble(steps, tile_sizes, mu, mv, mw)
   x = [(i-1)*Δx for i = 1:nx, j = 1:ny, k = 1:nz]
   y = [(j-1)*Δx for i = 1:nx, j = 1:ny, k = 1:nz]
   z = [(k-1)*Δz for i = 1:nx, j = 1:ny, k = 1:nz]
+  maskx = Array{Int8, 3}(undef, nx, ny, nz)
+  masky = Array{Int8, 3}(undef, nx, ny, nz)
+  maskz = Array{Int8, 3}(undef, nx, ny, nz)
+  for k = 1:nk, j = 1:nj, i = 1:ni
+    irange, jrange, krange = tile_range(i, j, k, tile_sizes)
+    filename = @sprintf("data/masks_%1d_%1d_%1d.h5", i, j, k)
+    maskx[irange,jrange,krange] = h5read(filename, "maskx")
+    masky[irange,jrange,krange] = h5read(filename, "masky")
+    maskz[irange,jrange,krange] = h5read(filename, "maskz")
+  end
+  maski = maskx .== 1
+  imsave("fig/maski.png", Array(maski[:,1,:]'), origin="lower")
+  imsave("fig/maskx.png", Array(maskx[:,1,:]'), origin="lower")
+  imsave("fig/masky.png", Array(masky[:,1,:]'), origin="lower")
+  imsave("fig/maskz.png", Array(maskz[:,1,:]'), origin="lower")
   for n in steps
     println(n)
     u = Array{Float64, 3}(undef, nx, ny, nz)
@@ -52,38 +71,42 @@ function assemble(steps, tile_sizes, mu, mv, mw)
     imsave(@sprintf("fig/w/%010d.png", n), Array(w[:,1,:]'), origin="lower", vmin=-mw, vmax=mw, cmap="RdBu_r")
     imsave(@sprintf("fig/ϕ/%010d.png", n), Array(ϕ[:,1,:]'), origin="lower")
     imsave(@sprintf("fig/b/%010d.png", n), Array(b[:,1,:]'), origin="lower")
-    figure(figsize=(9.6, 4.8))
-    PyPlot.axes(aspect=1)
-    imshow(Array(u[:,1,:]'), vmin=-mu, vmax=mu, origin="lower", cmap="RdBu_r")
-    contour(Array((b[:,1,:] + N^2*(x[:,1,:]*sin(θ) + z[:,1,:]*cos(θ)))'), levels=0:1e-8*1000:2e-6*1000, colors="black",
-            linewidths=.75)
-    savefig(@sprintf("fig/comb/%010d.svg", n), dpi=300)
-    close()
+#    figure(figsize=(9.6, 4.8))
+#    PyPlot.axes(aspect=1)
+#    imshow(Array(u[:,1,:]'), vmin=-mu, vmax=mu, origin="lower", cmap="RdBu_r")
+#    contour(Array((b[:,1,:] + N^2*(x[:,1,:]*sin(θ) + z[:,1,:]*cos(θ)))'), levels=0:1e-8*1000:2e-6*1000, colors="black",
+#            linewidths=.75)
+#    savefig(@sprintf("fig/comb/%010d.svg", n), dpi=300)
+#    close()
 #    # print conservation diagnostics
-#    println(@sprintf("%16.10e", mass(ϕ, maski, maskx, masky)))
-#    println(@sprintf("%16.10e", energy(u, v, ϕ, b, y, maski, maskx, masky)))
-#    println(@sprintf("%16.10e", buoyancy(ϕ, b, maski, maskx, masky)))
-#    println(@sprintf("%16.10e", buoyancy_variance(ϕ, b, maski, maskx, masky)))
+    println(@sprintf("%16.10e", mass(ϕ, maski, maskx, masky, maskz)))
+    println(@sprintf("%16.10e", energy(u, v, w, ϕ, b, z, maski, maskx, masky, maskz)))
+    println(@sprintf("%16.10e", buoyancy(ϕ, b, maski, maskx, masky, maskz)))
+    println(@sprintf("%16.10e", buoyancy_variance(ϕ, b, maski, maskx, masky, maskz)))
   end
 end
 
 # mass
-mass(ϕ, maski, maskx, masky) = sum(ϕ[maski]) + sum(ϕ[(maskx.>1).|(masky.>1)])/2
+function mass(ϕ, maski, maskx, masky, maskz)
+  maskb = (maskx .> 1) .| (masky .> 1) .| (maskz .> 1)
+  return sum(ϕ[maski]) + sum(ϕ[maskb])/2
+end
 
 # energy
-function energy(u, v, ϕ, b, y, maski, maskx, masky)
+function energy(u, v, w, ϕ, b, z, maski, maskx, masky, maskz)
   α = ϕ.*b/c^2
-  return sum(u[maski].^2)/2 + sum(v[maski].^2)/2 + sum(ϕ[maski].^2)/2c^2 + sum(ϕ[(maskx.>1).|(masky.>1)].^2)/4c^2 - 2sum(α[maski].*y[maski]) - sum(α[masky.>1].*y[masky.>1])
+  maskb = (maskx .> 1) .| (masky .> 1) .| (maskz .> 1)
+  return sum(u[maski].^2)/2 + sum(v[maski].^2)/2 + sum(w[maski].^2)/2μ^2 + sum(ϕ[maski].^2)/2c^2 + sum(ϕ[maskb].^2)/4c^2 - 2sum(α[maski].*z[maski]) - sum(α[maskz.>1].*z[maskz.>1])
 end
 
 # buoyancy
-function buoyancy(ϕ, b, maski, maskx, masky)
-  maskb = (maskx .> 1) .| (masky .> 1)
+function buoyancy(ϕ, b, maski, maskx, masky, maskz)
+  maskb = (maskx .> 1) .| (masky .> 1) .| (maskz .> 1)
   return sum(ϕ[maski].*b[maski]) + sum(ϕ[maskb].*b[maskb])/2
 end
 
 # buoyancy variance
-function buoyancy_variance(ϕ, b, maski, maskx, masky)
-  maskb = (maskx .> 1) .| (masky .> 1)
+function buoyancy_variance(ϕ, b, maski, maskx, masky, maskz)
+  maskb = (maskx .> 1) .| (masky .> 1) .| (maskz .> 1)
   return sum(ϕ[maski].*b[maski].^2) + sum(ϕ[maskb].*b[maskb].^2)/2
 end

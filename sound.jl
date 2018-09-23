@@ -471,12 +471,10 @@ end
 # boundary masks (see Fig. 1 in Salmon for a sketch)
 @everywhere function boundary_masks(fluid, chan_send_w, chan_send_e, chan_send_s, chan_send_n, chan_send_b, chan_send_t,
                                     chan_receive_w, chan_receive_e, chan_receive_s, chan_receive_n, chan_receive_b, chan_receive_t)
+  # tile size
   nx, ny, nz = size(fluid)
-  maski = Array{Bool, 3}(undef, nx, ny, nz)
-  maskx = Array{UInt8, 3}(undef, nx, ny, nz)
-  masky = Array{UInt8, 3}(undef, nx, ny, nz)
-  maskz = Array{UInt8, 3}(undef, nx, ny, nz)
   # find interior points
+  maski = Array{Bool, 3}(undef, nx, ny, nz)
   for k = 2:nz-1, j = 2:ny-1, i = 2:nx-1
     if all(fluid[i-1:i,j-1:j,k-1:k]) # interior
       maski[i,j,k] = true
@@ -488,12 +486,11 @@ end
   exchangex!(maski, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
   exchangey!(maski, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
   exchangez!(maski, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
-  # find and categorize boundary points
-  for k = 2:nz-1, j = 2:ny-1, i = 2:nx-1
+  # find and categorize zonal boundary points
+  maskx = Array{UInt8, 3}(undef, nx, ny, nz)
+  for k = 1:nz, j = 1:ny, i = 2:nx-1
     if maski[i,j,k] # interior
       maskx[i,j,k] = 1
-      masky[i,j,k] = 1
-      maskz[i,j,k] = 1
     else # not interior
       if maski[i+1,j,k] # western boundary
         maskx[i,j,k] = 2
@@ -502,6 +499,16 @@ end
       else # inside corner or solid
         maskx[i,j,k] = 0
       end
+    end
+  end
+  # exchange edges
+  exchangex!(maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+  # find and categorize meridional boundary points
+  masky = Array{UInt8, 3}(undef, nx, ny, nz)
+  for k = 1:nz, j = 2:ny-1, i = 1:nx
+    if maski[i,j,k] # interior
+      masky[i,j,k] = 1
+    else # not interior
       if maski[i,j+1,k] # southern boundary
         masky[i,j,k] = 2
       elseif maski[i,j-1,k] # northern boundary
@@ -509,6 +516,16 @@ end
       else # inside corner or solid
         masky[i,j,k] = 0
       end
+    end
+  end
+  # exchange edges
+  exchangey!(masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+  # find and categorize vertical boundary points
+  maskz = Array{UInt8, 3}(undef, nx, ny, nz)
+  for k = 2:nz-1, j = 1:ny, i = 1:nx
+    if maski[i,j,k] # interior
+      maskz[i,j,k] = 1
+    else # not interior
       if maski[i,j,k+1] # bottom boundary
         maskz[i,j,k] = 2
       elseif maski[i,j,k-1] # top boundary
@@ -519,14 +536,6 @@ end
     end
   end
   # exchange edges
-  exchangex!(maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
-  exchangex!(masky, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
-  exchangex!(maskz, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
-  exchangey!(maskx, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
-  exchangey!(masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
-  exchangey!(maskz, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
-  exchangez!(maskx, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
-  exchangez!(masky, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
   exchangez!(maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
   return maski, maskx, masky, maskz
 end
@@ -562,20 +571,26 @@ end
 @everywhere function run_tile(i, j, k, irange, jrange, krange, steps, chan_send_w, chan_send_e, chan_send_s, chan_send_n,
                               chan_send_b, chan_send_t, chan_receive_w, chan_receive_e, chan_receive_s, chan_receive_n,
                               chan_receive_b, chan_receive_t)
+  # tile size
+  nx = length(irange) + 2
+  ny = length(jrange) + 2
+  nz = length(krange) + 2
+  # coordinates
+  x = [(i-1)*Δx for i = irange[1]-1:irange[end]+1, j = jrange[1]-1:jrange[end]+1, k = krange[1]-1:krange[end]+1]
+  y = [(j-1)*Δx for i = irange[1]-1:irange[end]+1, j = jrange[1]-1:jrange[end]+1, k = krange[1]-1:krange[end]+1]
+  z = [(k-1)*Δz for i = irange[1]-1:irange[end]+1, j = jrange[1]-1:jrange[end]+1, k = krange[1]-1:krange[end]+1]
   # read topography mask
   maski, maskx, masky, maskz = read_topo(irange, jrange, krange, chan_send_w, chan_send_e, chan_send_s, chan_send_n,
                                          chan_send_b, chan_send_t, chan_receive_w, chan_receive_e, chan_receive_s, chan_receive_n,
                                          chan_receive_b, chan_receive_t)
-  # initialization
-  nx = length(irange) + 2
-  ny = length(jrange) + 2
-  nz = length(krange) + 2
+  # save masks
+  h5write(@sprintf("data/masks_%1d_%1d_%1d.h5", i, j, k), "maskx", maskx[2:nx-1,2:ny-1,2:nz-1])
+  h5write(@sprintf("data/masks_%1d_%1d_%1d.h5", i, j, k), "masky", masky[2:nx-1,2:ny-1,2:nz-1])
+  h5write(@sprintf("data/masks_%1d_%1d_%1d.h5", i, j, k), "maskz", maskz[2:nx-1,2:ny-1,2:nz-1])
+  # initial conditions
   u = zeros(nx, ny, nz)
   v = zeros(nx, ny, nz)
   w = zeros(nx, ny, nz)
-  x = [(i-1)*Δx for i = irange[1]-1:irange[end]+1, j = jrange[1]-1:jrange[end]+1, k = krange[1]-1:krange[end]+1]
-  y = [(j-1)*Δx for i = irange[1]-1:irange[end]+1, j = jrange[1]-1:jrange[end]+1, k = krange[1]-1:krange[end]+1]
-  z = [(k-1)*Δz for i = irange[1]-1:irange[end]+1, j = jrange[1]-1:jrange[end]+1, k = krange[1]-1:krange[end]+1]
   ϕ = c^2*ones(nx, ny, nz)
   b = zeros(nx, ny, nz)
   # specify where Dirichlet boundary conditions are to be imposed
@@ -584,14 +599,14 @@ end
   diriw = .!maski
   dirib = falses(nx, ny, nz)
   # time steps
-  for n = 1:steps
-    if n % 100 == 1
+  for n = steps
+    if mod1(n, 100) == 1
       # discard edges
       us = u[2:nx-1,2:ny-1,2:nz-1]
       vs = v[2:nx-1,2:ny-1,2:nz-1]
       ws = w[2:nx-1,2:ny-1,2:nz-1]
       ϕs = ϕ[2:nx-1,2:ny-1,2:nz-1]
-      bs = b[2:nx-1,2:ny-1,2:nz-1]# + N^2*(x[2:nx-1,2:ny-1,2:nz-1]*sin(θ) + z[2:nx-1,2:ny-1,2:nz-1]*cos(θ))
+      bs = b[2:nx-1,2:ny-1,2:nz-1]
       # replace missing values with NaNs
       solid = ((maskx .== 0) .& (masky .== 0) .& (maskz .== 0))[2:nx-1,2:ny-1,2:nz-1]
       us[solid] .= NaN
@@ -630,18 +645,18 @@ end
         chan_receive_w, chan_receive_e, chan_receive_b, chan_receive_t)
     Rz!(u, v, ϕ, maski, chan_send_w, chan_send_e, chan_send_s, chan_send_n,
         chan_receive_w, chan_receive_e, chan_receive_s, chan_receive_n)
-    Sx!(u, ϕ, b, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
     Tx!(u, ϕ, b, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
     #Ty!(v, ϕ, b, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+    Sx!(u, ϕ, b, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
     #Sy!(v, ϕ, b, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
     Sz!(w, ϕ, b, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
     Tz!(w, ϕ, b, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
     Tz!(w, ϕ, b, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
     Sz!(w, ϕ, b, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
     #Sy!(v, ϕ, b, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+    Sx!(u, ϕ, b, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
     #Ty!(v, ϕ, b, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
     Tx!(u, ϕ, b, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
-    Sx!(u, ϕ, b, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
     Rz!(u, v, ϕ, maski, chan_send_w, chan_send_e, chan_send_s, chan_send_n,
         chan_receive_w, chan_receive_e, chan_receive_s, chan_receive_n)
     Ry!(u, w, ϕ, maski, chan_send_w, chan_send_e, chan_send_b, chan_send_t,
