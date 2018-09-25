@@ -2,7 +2,6 @@
 # of Sound Waves" (JPO, 2009)
 
 # next steps:
-# - print date/time
 # - allow stress BC (need to modify rotational split)
 # - organize channels better?
 
@@ -11,9 +10,9 @@
 @everywhere using Dates
 
 # grid spacing
-@everywhere const Δx = 60e3/128
+@everywhere const Δx = 64e3/128
 @everywhere const Δy = Δx
-@everywhere const Δz = 1000/128
+@everywhere const Δz = 1024/128
 
 # vertical viscosity/diffusion
 @everywhere const ν = 1e-3
@@ -646,7 +645,7 @@ end
   h5write(filename, "ϕ", ϕs)
   h5write(filename, "b", bs)
   # screen print
-  println(@sprintf("%s %6i %9.3e %9.3e %9.3e %9.3e", now(), n, n*2Δt, maximum(abs.(us[.!solid])), maximum(abs.(vs[.!solid])),
+  println(@sprintf("%23s %6i %9.3e %9.3e %9.3e %9.3e", now(), n, n*2Δt, maximum(abs.(us[.!solid])), maximum(abs.(vs[.!solid])),
                    maximum(abs.(ws[.!solid]))))
 end
 
@@ -681,6 +680,11 @@ end
   h5write(@sprintf("data/masks_%1d_%1d_%1d.h5", i, j, k), "maskx", maskx[2:nx-1,2:ny-1,2:nz-1])
   h5write(@sprintf("data/masks_%1d_%1d_%1d.h5", i, j, k), "masky", masky[2:nx-1,2:ny-1,2:nz-1])
   h5write(@sprintf("data/masks_%1d_%1d_%1d.h5", i, j, k), "maskz", maskz[2:nx-1,2:ny-1,2:nz-1])
+  # specify where Dirichlet boundary conditions are to be imposed
+  diriu = .!maski
+  diriv = .!maski
+  diriw = .!maski
+  dirib = falses(nx, ny, nz)
   # initial conditions
   u = zeros(nx, ny, nz)
   v = zeros(nx, ny, nz)
@@ -689,11 +693,6 @@ end
   b = zeros(nx, ny, nz)
   # save initial conditions to file
   save_tile(0, i, j, k, u, v, w, ϕ, b, maskx, masky, maskz)
-  # specify where Dirichlet boundary conditions are to be imposed
-  diriu = .!maski
-  diriv = .!maski
-  diriw = .!maski
-  dirib = falses(nx, ny, nz)
   # time steps
   for n = steps
     # Strang splitting
@@ -776,22 +775,21 @@ function run_model(steps, tile_sizes)
   chan_n = [RemoteChannel(()->Channel{Array{Float64,2}}(1), proc[i,j,k]) for i = 1:ni, j = 1:nj, k = 1:nk]
   chan_b = [RemoteChannel(()->Channel{Array{Float64,2}}(1), proc[i,j,k]) for i = 1:ni, j = 1:nj, k = 1:nk]
   chan_t = [RemoteChannel(()->Channel{Array{Float64,2}}(1), proc[i,j,k]) for i = 1:ni, j = 1:nj, k = 1:nk]
-  # spawn work on tiles
-  a = Array{Future}(undef, ni, nj, nk)
-  for k = 1:nk, j = 1:nj, i = 1:ni
-    # index range in global domain
-    irange, jrange, krange = tile_range(i, j, k, tile_sizes)
-    println(@sprintf("worker %1d: tile %1d,%1d,%1d", proc[i,j,k], i, j, k))
-    println(irange); println(jrange); println(krange)
-    # indices of neighboring tiles
-    iw = mod1(i - 1, ni); ie = mod1(i + 1, ni)
-    js = mod1(j - 1, nj); jn = mod1(j + 1, nj)
-    kb = mod1(k - 1, nk); kt = mod1(k + 1, nk)
-    # run model on tile
-    a[i,j,k] = @spawnat proc[i,j,k] run_tile(i, j, k, irange, jrange, krange, steps, chan_w[i,j,k], chan_e[i,j,k], chan_s[i,j,k],
-                                             chan_n[i,j,k], chan_b[i,j,k], chan_t[i,j,k], chan_e[iw,j,k], chan_w[ie,j,k],
-                                             chan_n[i,js,k], chan_s[i,jn,k], chan_t[i,j,kb], chan_b[i,j,kt])
+  # run model on tiles
+  @sync begin
+    for k = 1:nk, j = 1:nj, i = 1:ni
+      # index range in global domain
+      irange, jrange, krange = tile_range(i, j, k, tile_sizes)
+      println(@sprintf("worker %1d: tile %1d,%1d,%1d", proc[i,j,k], i, j, k))
+      println(irange); println(jrange); println(krange)
+      # indices of neighboring tiles
+      iw = mod1(i - 1, ni); ie = mod1(i + 1, ni)
+      js = mod1(j - 1, nj); jn = mod1(j + 1, nj)
+      kb = mod1(k - 1, nk); kt = mod1(k + 1, nk)
+      # run model on tile
+      @async remotecall_fetch(run_tile, proc[i,j,k], i, j, k, irange, jrange, krange, steps, chan_w[i,j,k], chan_e[i,j,k],
+                              chan_s[i,j,k], chan_n[i,j,k], chan_b[i,j,k], chan_t[i,j,k], chan_e[iw,j,k], chan_w[ie,j,k],
+                              chan_n[i,js,k], chan_s[i,jn,k], chan_t[i,j,kb], chan_b[i,j,kt])
+    end
   end
-  # wait for results
-  wait.(a)
 end
