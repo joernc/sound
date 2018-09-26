@@ -2,9 +2,9 @@ using Printf
 using PyPlot
 using HDF5
 
-const Δx = 60e3/128
+const Δx = 64e3/128
 const Δy = Δx
-const Δz = 1000/128
+const Δz = 1024/128
 
 const c = 1.
 
@@ -71,11 +71,11 @@ function assemble(steps, tile_sizes, mu, mv, mw)
       ϕ[irange,jrange,krange] = h5read(filename, "ϕ")
       b[irange,jrange,krange] = h5read(filename, "b")
     end
-    imsave(@sprintf("fig/u/%010d.png", n), Array(u[:,:,64]'), origin="lower", vmin=-mu, vmax=mu, cmap="RdBu_r")
-    imsave(@sprintf("fig/v/%010d.png", n), Array(v[:,:,64]'), origin="lower", vmin=-mv, vmax=mv, cmap="RdBu_r")
-    imsave(@sprintf("fig/w/%010d.png", n), Array(w[:,:,64]'), origin="lower", vmin=-mw, vmax=mw, cmap="RdBu_r")
-    imsave(@sprintf("fig/ϕ/%010d.png", n), Array(ϕ[:,:,64]'), origin="lower")
-    imsave(@sprintf("fig/b/%010d.png", n), Array(b[:,:,64]'), origin="lower")
+    imsave(@sprintf("fig/u/%010d.png", n), Array(u[:,64,:]'), origin="lower", vmin=-mu, vmax=mu, cmap="RdBu_r")
+    imsave(@sprintf("fig/v/%010d.png", n), Array(v[:,64,:]'), origin="lower", vmin=-mv, vmax=mv, cmap="RdBu_r")
+    imsave(@sprintf("fig/w/%010d.png", n), Array(w[:,64,:]'), origin="lower", vmin=-mw, vmax=mw, cmap="RdBu_r")
+    imsave(@sprintf("fig/ϕ/%010d.png", n), Array(ϕ[:,64,:]'), origin="lower")
+    imsave(@sprintf("fig/b/%010d.png", n), Array(b[:,64,:]'), origin="lower")
 #    figure(figsize=(9.6, 4.8))
 #    PyPlot.axes(aspect=1)
 #    imshow(Array(u[1,:,:]'), vmin=-mu, vmax=mu, origin="lower", cmap="RdBu_r")

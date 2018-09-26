@@ -187,25 +187,22 @@ end
                          chan_receive_e::RemoteChannel{Channel{Array{Float64,2}}})
   # tile size
   nx, ny, nz = size(u)
-  # fields at initial time
-  up = copy(u)
-  bp = copy(b)
   # fields at midpoint
   ui = Array{Float64,3}(undef, nx, ny, nz)
   bi = Array{Float64,3}(undef, nx, ny, nz)
   # loop over grid points
   for k = 1:nz, j = 1:ny, i = 2:nx-1
     if maskx[i,j,k] == 1 # interior
-      ui[i,j,k] = up[i,j,k] + Δt/8*(bp[i-1,j,k] + 2bp[i,j,k] + bp[i+1,j,k])*sin(θ)
-      bi[i,j,k] = bp[i,j,k] + (c/8*((bp[i-1,j,k] + bp[i,j,k])*(up[i-1,j,k] + up[i,j,k])
-                                    - (bp[i,j,k] + bp[i+1,j,k])*(up[i,j,k] + up[i+1,j,k]))
-                               - c^2*Δt/2*up[i,j,k]*N^2*sin(θ))/ϕ[i,j,k]
+      ui[i,j,k] = u[i,j,k] + Δt/8*(b[i-1,j,k] + 2b[i,j,k] + b[i+1,j,k])*sin(θ)
+      bi[i,j,k] = b[i,j,k] + (c/8*((b[i-1,j,k] + b[i,j,k])*(u[i-1,j,k] + u[i,j,k])
+                                   - (b[i,j,k] + b[i+1,j,k])*(u[i,j,k] + u[i+1,j,k]))
+                              - c^2*Δt/2*u[i,j,k]*N^2*sin(θ))/ϕ[i,j,k]
     elseif (maskx[i,j,k] == 2) # western boundary
       ui[i,j,k] = 0.
-      bi[i,j,k] = bp[i,j,k] + c/4*(-(bp[i,j,k] + bp[i+1,j,k])*up[i+1,j,k])/ϕ[i,j,k]
+      bi[i,j,k] = b[i,j,k] + c/4*(-(b[i,j,k] + b[i+1,j,k])*u[i+1,j,k])/ϕ[i,j,k]
     elseif (maskx[i,j,k] == 3) # eastern boundary
       ui[i,j,k] = 0.
-      bi[i,j,k] = bp[i,j,k] + c/4*((bp[i-1,j,k] + bp[i,j,k])*up[i-1,j,k])/ϕ[i,j,k]
+      bi[i,j,k] = b[i,j,k] + c/4*((b[i-1,j,k] + b[i,j,k])*u[i-1,j,k])/ϕ[i,j,k]
     end
   end
   # exchange with neighboring tiles
@@ -214,16 +211,15 @@ end
   # loop over grid points
   for k = 1:nz, j = 1:ny, i = 2:nx-1
     if maskx[i,j,k] == 1 # interior
-      u[i,j,k] = up[i,j,k] + Δt/4*(bi[i-1,j,k] + 2bi[i,j,k] + bi[i+1,j,k])*sin(θ)
-      b[i,j,k] = bp[i,j,k] + (c/4*((bi[i-1,j,k] + bi[i,j,k])*(ui[i-1,j,k] + ui[i,j,k])
-                                   - (bi[i,j,k] + bi[i+1,j,k])*(ui[i,j,k] + ui[i+1,j,k]))
-                              - c^2*Δt*ui[i,j,k]*N^2*sin(θ))/ϕ[i,j,k]
+      u[i,j,k] += Δt/4*(bi[i-1,j,k] + 2bi[i,j,k] + bi[i+1,j,k])*sin(θ)
+      b[i,j,k] += (c/4*((bi[i-1,j,k] + bi[i,j,k])*(ui[i-1,j,k] + ui[i,j,k]) - (bi[i,j,k] + bi[i+1,j,k])*(ui[i,j,k] + ui[i+1,j,k]))
+                   - c^2*Δt*ui[i,j,k]*N^2*sin(θ))/ϕ[i,j,k]
     elseif (maskx[i,j,k] == 2) # western boundary
       u[i,j,k] = 0.
-      b[i,j,k] = bp[i,j,k] + c/2*(-(bi[i,j,k] + bi[i+1,j,k])*ui[i+1,j,k])/ϕ[i,j,k]
+      b[i,j,k] += c/2*(-(bi[i,j,k] + bi[i+1,j,k])*ui[i+1,j,k])/ϕ[i,j,k]
     elseif (maskx[i,j,k] == 3) # eastern boundary
       u[i,j,k] = 0.
-      b[i,j,k] = bp[i,j,k] + c/2*((bi[i-1,j,k] + bi[i,j,k])*ui[i-1,j,k])/ϕ[i,j,k]
+      b[i,j,k] += c/2*((bi[i-1,j,k] + bi[i,j,k])*ui[i-1,j,k])/ϕ[i,j,k]
     end
   end
   # exchange with neighboring tiles
@@ -239,24 +235,21 @@ end
                          chan_receive_n::RemoteChannel{Channel{Array{Float64,2}}})
   # tile size
   nx, ny, nz = size(v)
-  # fields at initial time
-  vp = copy(v)
-  bp = copy(b)
   # fields at midpoint
   vi = Array{Float64,3}(undef, nx, ny, nz)
   bi = Array{Float64,3}(undef, nx, ny, nz)
   # loop over grid points
   for k = 1:nz, j = 2:ny-1, i = 1:nx
     if masky[i,j,k] == 1 # interior
-      vi[i,j,k] = vp[i,j,k]
-      bi[i,j,k] = bp[i,j,k] + c/8*((bp[i,j-1,k] + bp[i,j,k])*(vp[i,j-1,k] + vp[i,j,k])
-                                   - (bp[i,j,k] + bp[i,j+1,k])*(vp[i,j,k] + vp[i,j+1,k]))/ϕ[i,j,k]
+      vi[i,j,k] = v[i,j,k]
+      bi[i,j,k] = b[i,j,k] + c/8*((b[i,j-1,k] + b[i,j,k])*(v[i,j-1,k] + v[i,j,k])
+                                  - (b[i,j,k] + b[i,j+1,k])*(v[i,j,k] + v[i,j+1,k]))/ϕ[i,j,k]
     elseif (masky[i,j,k] == 2) # southern boundary
       vi[i,j,k] = 0.
-      bi[i,j,k] = bp[i,j,k] + c/4*(-(bp[i,j,k] + bp[i,j+1,k])*vp[i,j+1,k])/ϕ[i,j,k]
+      bi[i,j,k] = b[i,j,k] + c/4*(-(b[i,j,k] + b[i,j+1,k])*v[i,j+1,k])/ϕ[i,j,k]
     elseif (masky[i,j,k] == 3) # northern boundary
       vi[i,j,k] = 0.
-      bi[i,j,k] = bp[i,j,k] + c/4*((bp[i,j-1,k] + bp[i,j,k])*vp[i,j-1,k])/ϕ[i,j,k]
+      bi[i,j,k] = b[i,j,k] + c/4*((b[i,j-1,k] + b[i,j,k])*v[i,j-1,k])/ϕ[i,j,k]
     end
   end
   # exchange with neighboring tiles
@@ -265,15 +258,14 @@ end
   # loop over grid points
   for k = 1:nz, j = 2:ny-1, i = 1:nx
     if masky[i,j,k] == 1 # interior
-      v[i,j,k] = vp[i,j,k]
-      b[i,j,k] = bp[i,j,k] + c/4*((bi[i,j-1,k] + bi[i,j,k])*(vi[i,j-1,k] + vi[i,j,k])
-                                  - (bi[i,j,k] + bi[i,j+1,k])*(vi[i,j,k] + vi[i,j+1,k]))/ϕ[i,j,k]
+      b[i,j,k] += c/4*((bi[i,j-1,k] + bi[i,j,k])*(vi[i,j-1,k] + vi[i,j,k])
+                       - (bi[i,j,k] + bi[i,j+1,k])*(vi[i,j,k] + vi[i,j+1,k]))/ϕ[i,j,k]
     elseif (masky[i,j,k] == 2) # southern boundary
       v[i,j,k] = 0.
-      b[i,j,k] = bp[i,j,k] + c/2*(-(bi[i,j,k] + bi[i,j+1,k])*vi[i,j+1,k])/ϕ[i,j,k]
+      b[i,j,k] += c/2*(-(bi[i,j,k] + bi[i,j+1,k])*vi[i,j+1,k])/ϕ[i,j,k]
     elseif (masky[i,j,k] == 3) # northern boundary
       v[i,j,k] = 0.
-      b[i,j,k] = bp[i,j,k] + c/2*((bi[i,j-1,k] + bi[i,j,k])*vi[i,j-1,k])/ϕ[i,j,k]
+      b[i,j,k] += c/2*((bi[i,j-1,k] + bi[i,j,k])*vi[i,j-1,k])/ϕ[i,j,k]
     end
   end
   # exchange with neighboring tiles
@@ -289,25 +281,22 @@ end
                          chan_receive_t::RemoteChannel{Channel{Array{Float64,2}}})
   # tile size
   nx, ny, nz = size(w)
-  # fields at initial time
-  wp = copy(w)
-  bp = copy(b)
   # fields at midpoint
   wi = Array{Float64,3}(undef, nx, ny, nz)
   bi = Array{Float64,3}(undef, nx, ny, nz)
   # loop over grid points
   for k = 2:nz-1, j = 1:ny, i = 1:nx
     if maskz[i,j,k] == 1 # interior
-      wi[i,j,k] = wp[i,j,k] + μ^2*Δt/8*(bp[i,j,k-1] + 2bp[i,j,k] + bp[i,j,k+1])*cos(θ)
-      bi[i,j,k] = bp[i,j,k] + (c/8μ*((bp[i,j,k-1] + bp[i,j,k])*(wp[i,j,k-1] + wp[i,j,k])
-                                     - (bp[i,j,k] + bp[i,j,k+1])*(wp[i,j,k] + wp[i,j,k+1]))
-                               - c^2*Δt/2*wp[i,j,k]*N^2*cos(θ))/ϕ[i,j,k]
+      wi[i,j,k] = w[i,j,k] + μ^2*Δt/8*(b[i,j,k-1] + 2b[i,j,k] + b[i,j,k+1])*cos(θ)
+      bi[i,j,k] = b[i,j,k] + (c/8μ*((b[i,j,k-1] + b[i,j,k])*(w[i,j,k-1] + w[i,j,k])
+                                    - (b[i,j,k] + b[i,j,k+1])*(w[i,j,k] + w[i,j,k+1]))
+                              - c^2*Δt/2*w[i,j,k]*N^2*cos(θ))/ϕ[i,j,k]
     elseif maskz[i,j,k] == 2 # bottom boundary
       wi[i,j,k] = 0.
-      bi[i,j,k] = bp[i,j,k] + c/4μ*(-(bp[i,j,k] + bp[i,j,k+1])*wp[i,j,k+1])/ϕ[i,j,k]
+      bi[i,j,k] = b[i,j,k] + c/4μ*(-(b[i,j,k] + b[i,j,k+1])*w[i,j,k+1])/ϕ[i,j,k]
     elseif maskz[i,j,k] == 3 # top boundary
       wi[i,j,k] = 0.
-      bi[i,j,k] = bp[i,j,k] + c/4μ*((bp[i,j,k-1] + bp[i,j,k])*wp[i,j,k-1])/ϕ[i,j,k]
+      bi[i,j,k] = b[i,j,k] + c/4μ*((b[i,j,k-1] + b[i,j,k])*w[i,j,k-1])/ϕ[i,j,k]
     end
   end
   # exchange with neighboring tiles
@@ -316,16 +305,15 @@ end
   # loop over grid points
   for k = 2:nz-1, j = 1:ny, i = 1:nx
     if maskz[i,j,k] == 1 # interior
-      w[i,j,k] = wp[i,j,k] + μ^2*Δt/4*(bi[i,j,k-1] + 2bi[i,j,k] + bi[i,j,k+1])*cos(θ)
-      b[i,j,k] = bp[i,j,k] + (c/4μ*((bi[i,j,k-1] + bi[i,j,k])*(wi[i,j,k-1] + wi[i,j,k])
-                                    - (bi[i,j,k] + bi[i,j,k+1])*(wi[i,j,k] + wi[i,j,k+1]))
-                              - c^2*Δt*wi[i,j,k]*N^2*cos(θ))/ϕ[i,j,k]
+      w[i,j,k] += μ^2*Δt/4*(bi[i,j,k-1] + 2bi[i,j,k] + bi[i,j,k+1])*cos(θ)
+      b[i,j,k] += (c/4μ*((bi[i,j,k-1] + bi[i,j,k])*(wi[i,j,k-1] + wi[i,j,k]) - (bi[i,j,k] + bi[i,j,k+1])*(wi[i,j,k] + wi[i,j,k+1]))
+                   - c^2*Δt*wi[i,j,k]*N^2*cos(θ))/ϕ[i,j,k]
     elseif maskz[i,j,k] == 2 # bottom boundary
       w[i,j,k] = 0.
-      b[i,j,k] = bp[i,j,k] + c/2μ*(-(bi[i,j,k] + bi[i,j,k+1])*wi[i,j,k+1])/ϕ[i,j,k]
+      b[i,j,k] += c/2μ*(-(bi[i,j,k] + bi[i,j,k+1])*wi[i,j,k+1])/ϕ[i,j,k]
     elseif maskz[i,j,k] == 3 # top boundary
       w[i,j,k] = 0.
-      b[i,j,k] = bp[i,j,k] + c/2μ*((bi[i,j,k-1] + bi[i,j,k])*wi[i,j,k-1])/ϕ[i,j,k]
+      b[i,j,k] += c/2μ*((bi[i,j,k-1] + bi[i,j,k])*wi[i,j,k-1])/ϕ[i,j,k]
     end
   end
   # exchange with neighboring tiles
