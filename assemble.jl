@@ -2,19 +2,13 @@ using Printf
 using PyPlot
 using HDF5
 
-const Δx = 64e3/128
+const Δx = 64e3/256
 const Δy = Δx
-const Δz = 1024/128
+const Δz = 1024/256
 
 const c = 1.
 
 const μ = Δz/Δx
-
-# background stratification
-const N = 1e-3
-
-# slope angle
-const θ = 2e-3
 
 pygui(false)
 rc("contour", negative_linestyle="solid")
@@ -34,10 +28,8 @@ function assemble(steps, tile_sizes, mu, mv, mw)
   nx = sum(tile_sizes[1])
   ny = sum(tile_sizes[2])
   nz = sum(tile_sizes[3])
-  # coordinates
-  x = [(i-1)*Δx for i = 1:nx, j = 1:ny, k = 1:nz]
-  y = [(j-1)*Δx for i = 1:nx, j = 1:ny, k = 1:nz]
-  z = [(k-1)*Δz for i = 1:nx, j = 1:ny, k = 1:nz]
+  # vertical coordinate
+  z = [(k-1)*Δz for i =1:nx, j = 1:ny, k = 1:nz]
   # assemble masks
   maskx = Array{Int8, 3}(undef, nx, ny, nz)
   masky = Array{Int8, 3}(undef, nx, ny, nz)
@@ -71,18 +63,17 @@ function assemble(steps, tile_sizes, mu, mv, mw)
       ϕ[irange,jrange,krange] = h5read(filename, "ϕ")
       b[irange,jrange,krange] = h5read(filename, "b")
     end
-    imsave(@sprintf("fig/u/%010d.png", n), Array(u[:,64,:]'), origin="lower", vmin=-mu, vmax=mu, cmap="RdBu_r")
-    imsave(@sprintf("fig/v/%010d.png", n), Array(v[:,64,:]'), origin="lower", vmin=-mv, vmax=mv, cmap="RdBu_r")
-    imsave(@sprintf("fig/w/%010d.png", n), Array(w[:,64,:]'), origin="lower", vmin=-mw, vmax=mw, cmap="RdBu_r")
-    imsave(@sprintf("fig/ϕ/%010d.png", n), Array(ϕ[:,64,:]'), origin="lower")
-    imsave(@sprintf("fig/b/%010d.png", n), Array(b[:,64,:]'), origin="lower")
-#    figure(figsize=(9.6, 4.8))
-#    PyPlot.axes(aspect=1)
-#    imshow(Array(u[1,:,:]'), vmin=-mu, vmax=mu, origin="lower", cmap="RdBu_r")
-#    contour(Array((b[1,:,:] + N^2*(x[1,:,:]*sin(θ) + z[1,:,:]*cos(θ)))'), levels=0:1e-8*1000:2e-6*1000, colors="black",
-#            linewidths=.75)
-#    savefig(@sprintf("fig/comb/%010d.svg", n), dpi=300)
-#    close()
+    imsave(@sprintf("fig/u/%010d.png", n), Array(u[:,:,128]'), origin="lower", vmin=-mu, vmax=mu, cmap="RdBu_r")
+    imsave(@sprintf("fig/v/%010d.png", n), Array(v[:,:,128]'), origin="lower", vmin=-mv, vmax=mv, cmap="RdBu_r")
+    imsave(@sprintf("fig/w/%010d.png", n), Array(w[:,:,128]'), origin="lower", vmin=-mw, vmax=mw, cmap="RdBu_r")
+    imsave(@sprintf("fig/ϕ/%010d.png", n), Array(ϕ[:,:,128]'), origin="lower")
+    imsave(@sprintf("fig/b/%010d.png", n), Array(b[:,:,128]'), origin="lower")
+    figure(figsize=(9.6, 4.8))
+    PyPlot.axes(aspect=1)
+    imshow(Array(w[:,32,:]'), vmin=-mw, vmax=mw, origin="lower", cmap="RdBu_r")
+    contour(Array(b[:,32,:]'), levels=0:1e-8*1024:2e-6*1024, colors="black", linewidths=.75)
+    savefig(@sprintf("fig/iso/%010d.svg", n), dpi=300)
+    close()
     # print conservation diagnostics
     println(@sprintf("%16.10e", mass(ϕ, maski, maskx, masky, maskz)))
     println(@sprintf("%16.10e", energy(u, v, w, ϕ, b, z, maski, maskx, masky, maskz)))
@@ -101,7 +92,7 @@ end
 function energy(u, v, w, ϕ, b, z, maski, maskx, masky, maskz)
   α = ϕ.*b/c^2
   maskb = (maskx .> 1) .| (masky .> 1) .| (maskz .> 1)
-  return sum(u[maski].^2)/2 + sum(v[maski].^2)/2 + sum(w[maski].^2)/2μ^2 + sum(ϕ[maski].^2)/2c^2 + sum(ϕ[maskb].^2)/4c^2 - 2sum(α[maski].*z[maski]) - sum(α[maskz.>1].*z[maskz.>1])
+  return sum(u[maski].^2)/2 + sum(v[maski].^2)/2 + sum(w[maski].^2)/2μ^2 + sum(ϕ[maski].^2)/2c^2 + sum(ϕ[maskb].^2)/4c^2 - sum(α[maski].*z[maski]) - sum(α[maskb].*z[maskb])/2
 end
 
 # buoyancy

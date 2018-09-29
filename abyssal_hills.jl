@@ -2,12 +2,12 @@ using FFTW
 using HDF5
 
 # domain size
-Lx = 60e3
-Ly = 60e3
+Lx = 64e3
+Ly = 64e3
 
 # number of grid points
-nx = 256
-ny = 256
+nx = 1024
+ny = 1024
 
 # parameters
 k0 = 1.0e-3
@@ -38,4 +38,4 @@ S = sqrt.(H.(k, l, k0, l0, h, ν)).*exp.(2π*1im*rand(nx÷2+1, ny))
 b = irfft(S, nx)*nx*ny/sqrt(Lx*Ly)
 
 # save to file
-h5write("abyssal_256x256.h5", "b", b)
+h5write("abyssal_1024x1024.h5", "b", b)

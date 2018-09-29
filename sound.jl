@@ -10,21 +10,15 @@
 @everywhere using Dates
 
 # grid spacing
-@everywhere const Δx = 64e3/128
+@everywhere const Δx = 64e3/256
 @everywhere const Δy = Δx
-@everywhere const Δz = 1024/128
+@everywhere const Δz = 1024/256
 
 # vertical viscosity/diffusion
 @everywhere const ν = 1e-3
 
 # inertial frequency
-@everywhere const f = .5e-4
-
-# background stratification
-@everywhere const N = 1e-3
-
-# slope angle
-@everywhere const θ = 2e-3
+@everywhere const f = 5e-5
 
 # sound speed
 @everywhere const c = 1.
@@ -36,7 +30,7 @@
 @everywhere const μ = Δz/Δx
 
 # constant for diffusion steps
-@everywhere const α = ν*Δt/Δz^2
+@everywhere const α = ν*2Δt/Δz^2
 
 @everywhere function exchangex!(a::Array{Float64,3},
                                 chan_send_w::RemoteChannel{Channel{Array{Float64,2}}},
@@ -193,16 +187,15 @@ end
   # loop over grid points
   for k = 1:nz, j = 1:ny, i = 2:nx-1
     if maskx[i,j,k] == 1 # interior
-      ui[i,j,k] = u[i,j,k] + Δt/8*(b[i-1,j,k] + 2b[i,j,k] + b[i+1,j,k])*sin(θ)
-      bi[i,j,k] = b[i,j,k] + (c/8*((b[i-1,j,k] + b[i,j,k])*(u[i-1,j,k] + u[i,j,k])
-                                   - (b[i,j,k] + b[i+1,j,k])*(u[i,j,k] + u[i+1,j,k]))
-                              - c^2*Δt/2*u[i,j,k]*N^2*sin(θ))/ϕ[i,j,k]
+      ui[i,j,k] = u[i,j,k]
+      bi[i,j,k] = b[i,j,k] + Δt/8Δx*((b[i-1,j,k] + b[i,j,k])*(u[i-1,j,k] + u[i,j,k])
+                                     - (b[i,j,k] + b[i+1,j,k])*(u[i,j,k] + u[i+1,j,k]))*c^2/ϕ[i,j,k]
     elseif (maskx[i,j,k] == 2) # western boundary
       ui[i,j,k] = 0.
-      bi[i,j,k] = b[i,j,k] + c/4*(-(b[i,j,k] + b[i+1,j,k])*u[i+1,j,k])/ϕ[i,j,k]
+      bi[i,j,k] = b[i,j,k] + Δt/4Δx*(-(b[i,j,k] + b[i+1,j,k])*u[i+1,j,k])*c^2/ϕ[i,j,k]
     elseif (maskx[i,j,k] == 3) # eastern boundary
       ui[i,j,k] = 0.
-      bi[i,j,k] = b[i,j,k] + c/4*((b[i-1,j,k] + b[i,j,k])*u[i-1,j,k])/ϕ[i,j,k]
+      bi[i,j,k] = b[i,j,k] + Δt/4Δx*((b[i-1,j,k] + b[i,j,k])*u[i-1,j,k])*c^2/ϕ[i,j,k]
     end
   end
   # exchange with neighboring tiles
@@ -211,15 +204,14 @@ end
   # loop over grid points
   for k = 1:nz, j = 1:ny, i = 2:nx-1
     if maskx[i,j,k] == 1 # interior
-      u[i,j,k] += Δt/4*(bi[i-1,j,k] + 2bi[i,j,k] + bi[i+1,j,k])*sin(θ)
-      b[i,j,k] += (c/4*((bi[i-1,j,k] + bi[i,j,k])*(ui[i-1,j,k] + ui[i,j,k]) - (bi[i,j,k] + bi[i+1,j,k])*(ui[i,j,k] + ui[i+1,j,k]))
-                   - c^2*Δt*ui[i,j,k]*N^2*sin(θ))/ϕ[i,j,k]
+      b[i,j,k] += Δt/4Δx*((bi[i-1,j,k] + bi[i,j,k])*(ui[i-1,j,k] + ui[i,j,k])
+                          - (bi[i,j,k] + bi[i+1,j,k])*(ui[i,j,k] + ui[i+1,j,k]))*c^2/ϕ[i,j,k]
     elseif (maskx[i,j,k] == 2) # western boundary
       u[i,j,k] = 0.
-      b[i,j,k] += c/2*(-(bi[i,j,k] + bi[i+1,j,k])*ui[i+1,j,k])/ϕ[i,j,k]
+      b[i,j,k] += Δt/2Δx*(-(bi[i,j,k] + bi[i+1,j,k])*ui[i+1,j,k])*c^2/ϕ[i,j,k]
     elseif (maskx[i,j,k] == 3) # eastern boundary
       u[i,j,k] = 0.
-      b[i,j,k] += c/2*((bi[i-1,j,k] + bi[i,j,k])*ui[i-1,j,k])/ϕ[i,j,k]
+      b[i,j,k] += Δt/2Δx*((bi[i-1,j,k] + bi[i,j,k])*ui[i-1,j,k])*c^2/ϕ[i,j,k]
     end
   end
   # exchange with neighboring tiles
@@ -242,14 +234,14 @@ end
   for k = 1:nz, j = 2:ny-1, i = 1:nx
     if masky[i,j,k] == 1 # interior
       vi[i,j,k] = v[i,j,k]
-      bi[i,j,k] = b[i,j,k] + c/8*((b[i,j-1,k] + b[i,j,k])*(v[i,j-1,k] + v[i,j,k])
-                                  - (b[i,j,k] + b[i,j+1,k])*(v[i,j,k] + v[i,j+1,k]))/ϕ[i,j,k]
+      bi[i,j,k] = b[i,j,k] + Δt/8Δy*((b[i,j-1,k] + b[i,j,k])*(v[i,j-1,k] + v[i,j,k])
+                                     - (b[i,j,k] + b[i,j+1,k])*(v[i,j,k] + v[i,j+1,k]))*c^2/ϕ[i,j,k]
     elseif (masky[i,j,k] == 2) # southern boundary
       vi[i,j,k] = 0.
-      bi[i,j,k] = b[i,j,k] + c/4*(-(b[i,j,k] + b[i,j+1,k])*v[i,j+1,k])/ϕ[i,j,k]
+      bi[i,j,k] = b[i,j,k] + Δt/4Δy*(-(b[i,j,k] + b[i,j+1,k])*v[i,j+1,k])*c^2/ϕ[i,j,k]
     elseif (masky[i,j,k] == 3) # northern boundary
       vi[i,j,k] = 0.
-      bi[i,j,k] = b[i,j,k] + c/4*((b[i,j-1,k] + b[i,j,k])*v[i,j-1,k])/ϕ[i,j,k]
+      bi[i,j,k] = b[i,j,k] + Δt/4Δy*((b[i,j-1,k] + b[i,j,k])*v[i,j-1,k])*c^2/ϕ[i,j,k]
     end
   end
   # exchange with neighboring tiles
@@ -258,14 +250,14 @@ end
   # loop over grid points
   for k = 1:nz, j = 2:ny-1, i = 1:nx
     if masky[i,j,k] == 1 # interior
-      b[i,j,k] += c/4*((bi[i,j-1,k] + bi[i,j,k])*(vi[i,j-1,k] + vi[i,j,k])
-                       - (bi[i,j,k] + bi[i,j+1,k])*(vi[i,j,k] + vi[i,j+1,k]))/ϕ[i,j,k]
+      b[i,j,k] += Δt/4Δy*((bi[i,j-1,k] + bi[i,j,k])*(vi[i,j-1,k] + vi[i,j,k])
+                          - (bi[i,j,k] + bi[i,j+1,k])*(vi[i,j,k] + vi[i,j+1,k]))*c^2/ϕ[i,j,k]
     elseif (masky[i,j,k] == 2) # southern boundary
       v[i,j,k] = 0.
-      b[i,j,k] += c/2*(-(bi[i,j,k] + bi[i,j+1,k])*vi[i,j+1,k])/ϕ[i,j,k]
+      b[i,j,k] += Δt/2Δy*(-(bi[i,j,k] + bi[i,j+1,k])*vi[i,j+1,k])*c^2/ϕ[i,j,k]
     elseif (masky[i,j,k] == 3) # northern boundary
       v[i,j,k] = 0.
-      b[i,j,k] += c/2*((bi[i,j-1,k] + bi[i,j,k])*vi[i,j-1,k])/ϕ[i,j,k]
+      b[i,j,k] += Δt/2Δy*((bi[i,j-1,k] + bi[i,j,k])*vi[i,j-1,k])*c^2/ϕ[i,j,k]
     end
   end
   # exchange with neighboring tiles
@@ -287,16 +279,15 @@ end
   # loop over grid points
   for k = 2:nz-1, j = 1:ny, i = 1:nx
     if maskz[i,j,k] == 1 # interior
-      wi[i,j,k] = w[i,j,k] + μ^2*Δt/8*(b[i,j,k-1] + 2b[i,j,k] + b[i,j,k+1])*cos(θ)
-      bi[i,j,k] = b[i,j,k] + (c/8μ*((b[i,j,k-1] + b[i,j,k])*(w[i,j,k-1] + w[i,j,k])
-                                    - (b[i,j,k] + b[i,j,k+1])*(w[i,j,k] + w[i,j,k+1]))
-                              - c^2*Δt/2*w[i,j,k]*N^2*cos(θ))/ϕ[i,j,k]
+      wi[i,j,k] = w[i,j,k] + Δt*μ^2/8*(b[i,j,k-1] + 2b[i,j,k] + b[i,j,k+1])
+      bi[i,j,k] = b[i,j,k] + Δt/8Δz*((b[i,j,k-1] + b[i,j,k])*(w[i,j,k-1] + w[i,j,k])
+                                     - (b[i,j,k] + b[i,j,k+1])*(w[i,j,k] + w[i,j,k+1]))*c^2/ϕ[i,j,k]
     elseif maskz[i,j,k] == 2 # bottom boundary
       wi[i,j,k] = 0.
-      bi[i,j,k] = b[i,j,k] + c/4μ*(-(b[i,j,k] + b[i,j,k+1])*w[i,j,k+1])/ϕ[i,j,k]
+      bi[i,j,k] = b[i,j,k] + Δt/4Δz*(-(b[i,j,k] + b[i,j,k+1])*w[i,j,k+1])*c^2/ϕ[i,j,k]
     elseif maskz[i,j,k] == 3 # top boundary
       wi[i,j,k] = 0.
-      bi[i,j,k] = b[i,j,k] + c/4μ*((b[i,j,k-1] + b[i,j,k])*w[i,j,k-1])/ϕ[i,j,k]
+      bi[i,j,k] = b[i,j,k] + Δt/4Δz*((b[i,j,k-1] + b[i,j,k])*w[i,j,k-1])*c^2/ϕ[i,j,k]
     end
   end
   # exchange with neighboring tiles
@@ -305,15 +296,15 @@ end
   # loop over grid points
   for k = 2:nz-1, j = 1:ny, i = 1:nx
     if maskz[i,j,k] == 1 # interior
-      w[i,j,k] += μ^2*Δt/4*(bi[i,j,k-1] + 2bi[i,j,k] + bi[i,j,k+1])*cos(θ)
-      b[i,j,k] += (c/4μ*((bi[i,j,k-1] + bi[i,j,k])*(wi[i,j,k-1] + wi[i,j,k]) - (bi[i,j,k] + bi[i,j,k+1])*(wi[i,j,k] + wi[i,j,k+1]))
-                   - c^2*Δt*wi[i,j,k]*N^2*cos(θ))/ϕ[i,j,k]
+      w[i,j,k] += Δt*μ^2/4*(bi[i,j,k-1] + 2bi[i,j,k] + bi[i,j,k+1])
+      b[i,j,k] += Δt/4Δz*((bi[i,j,k-1] + bi[i,j,k])*(wi[i,j,k-1] + wi[i,j,k])
+                          - (bi[i,j,k] + bi[i,j,k+1])*(wi[i,j,k] + wi[i,j,k+1]))*c^2/ϕ[i,j,k]
     elseif maskz[i,j,k] == 2 # bottom boundary
       w[i,j,k] = 0.
-      b[i,j,k] += c/2μ*(-(bi[i,j,k] + bi[i,j,k+1])*wi[i,j,k+1])/ϕ[i,j,k]
+      b[i,j,k] += Δt/2Δz*(-(bi[i,j,k] + bi[i,j,k+1])*wi[i,j,k+1])*c^2/ϕ[i,j,k]
     elseif maskz[i,j,k] == 3 # top boundary
       w[i,j,k] = 0.
-      b[i,j,k] += c/2μ*((bi[i,j,k-1] + bi[i,j,k])*wi[i,j,k-1])/ϕ[i,j,k]
+      b[i,j,k] += Δt/2Δz*((bi[i,j,k-1] + bi[i,j,k])*wi[i,j,k-1])*c^2/ϕ[i,j,k]
     end
   end
   # exchange with neighboring tiles
@@ -339,8 +330,8 @@ end
   # loop over grid points
   for k = 2:nz-1, j = 2:ny-1, i = 1:nx
     if maski[i,j,k] # interior
-      ωx = f*sin(θ) + (wp[i,j+1,k] - wp[i,j-1,k])/2Δz - (vp[i,j,k+1] - vp[i,j,k-1])/2Δy # note switched Δ's
-      γx = ωx*Δt*c^2/ϕ[i,j,k]
+      ωx = (wp[i,j+1,k] - wp[i,j-1,k])/2Δz - (vp[i,j,k+1] - vp[i,j,k-1])/2Δy # note switched Δ's
+      γx = ωx*2Δt*c^2/ϕ[i,j,k]
       Cx = (1 - γx.^2/4)/(1 + γx^2/4)
       Sx = γx/(1 + γx^2/4)
       v[i,j,k] = vp[i,j,k]*Cx + wp[i,j,k]*Sx/μ
@@ -373,7 +364,7 @@ end
   for k = 2:nz-1, j = 1:ny, i = 2:nx-1
     if maski[i,j,k] # interior
       ωy = (up[i,j,k+1] - up[i,j,k-1])/2Δx - (wp[i+1,j,k] - wp[i-1,j,k])/2Δz # note switched Δ's
-      γy = ωy*Δt*c^2/ϕ[i,j,k]
+      γy = ωy*2Δt*c^2/ϕ[i,j,k]
       Cy = (1 - γy.^2/4)/(1 + γy^2/4)
       Sy = γy/(1 + γy^2/4)
       u[i,j,k] = up[i,j,k]*Cy - wp[i,j,k]*Sy/μ
@@ -405,8 +396,8 @@ end
   # loop over grid points
   for k = 1:nz, j = 2:ny-1, i = 2:nx-1
     if maski[i,j,k] # interior
-      ωz = f*cos(θ) + (vp[i+1,j,k] - vp[i-1,j,k])/2Δx - (up[i,j+1,k] - up[i,j-1,k])/2Δy
-      γz = ωz*Δt*c^2/ϕ[i,j,k]
+      ωz = f + (vp[i+1,j,k] - vp[i-1,j,k])/2Δx - (up[i,j+1,k] - up[i,j-1,k])/2Δy
+      γz = ωz*2Δt*c^2/ϕ[i,j,k]
       Cz = (1 - γz.^2/4)/(1 + γz^2/4)
       Sz = γz/(1 + γz^2/4)
       u[i,j,k] = up[i,j,k]*Cz + vp[i,j,k]*Sz
@@ -439,13 +430,13 @@ end
       if diri[i,j,k] # Dirichlet BC
         a[i,j,k] = 0.
       else # Neumann BC
-        a[i,j,k] = (1-2α)*ap[i,j,k] + 2α*ap[i+1,j,k] + 2Δt*flux/Δx
+        a[i,j,k] = (1-2α)*ap[i,j,k] + 2α*ap[i+1,j,k] + 4Δt*flux/Δx
       end
     elseif maskx[i,j,k] == 3 # east boundary
       if diri[i,j,k] # Dirichlet BC
         a[i,j,k] = 0.
       else # Neumann BC
-        a[i,j,k] = (1-2α)*ap[i,j,k] + 2α*ap[i-1,j,k] - 2Δt*flux/Δx
+        a[i,j,k] = (1-2α)*ap[i,j,k] + 2α*ap[i-1,j,k] - 4Δt*flux/Δx
       end
     end
   end
@@ -472,13 +463,13 @@ end
       if diri[i,j,k] # Dirichlet BC
         a[i,j,k] = 0.
       else # Neumann BC
-        a[i,j,k] = (1-2α)*ap[i,j,k] + 2α*ap[i,j+1,k] + 2Δt*flux/Δy
+        a[i,j,k] = (1-2α)*ap[i,j,k] + 2α*ap[i,j+1,k] + 4Δt*flux/Δy
       end
     elseif masky[i,j,k] == 3 # east boundary
       if diri[i,j,k] # Dirichlet BC
         a[i,j,k] = 0.
       else # Neumann BC
-        a[i,j,k] = (1-2α)*ap[i,j,k] + 2α*ap[i,j-1,k] - 2Δt*flux/Δy
+        a[i,j,k] = (1-2α)*ap[i,j,k] + 2α*ap[i,j-1,k] - 4Δt*flux/Δy
       end
     end
   end
@@ -505,13 +496,13 @@ end
       if diri[i,j,k] # Dirichlet BC
         a[i,j,k] = 0.
       else # Neumann BC
-        a[i,j,k] = (1-2α)*ap[i,j,k] + 2α*ap[i,j,k+1] + 2Δt*flux/Δz
+        a[i,j,k] = (1-2α)*ap[i,j,k] + 2α*ap[i,j,k+1] + 4Δt*flux/Δz
       end
     elseif maskz[i,j,k] == 3 # top boundary
       if diri[i,j,k] # Dirichlet BC
         a[i,j,k] = 0.
       else # Neumann BC
-        a[i,j,k] = (1-2α)*ap[i,j,k] + 2α*ap[i,j,k-1]# - 2Δt*flux/Δz
+        a[i,j,k] = (1-2α)*ap[i,j,k] + 2α*ap[i,j,k-1]# - 4Δt*flux/Δz
       end
     end
   end
@@ -532,9 +523,9 @@ end
 # read topography
 @everywhere function read_topo()
   # global domain size
-  nx = 128; ny = 128; nz = 128
+  nx = 256; ny = 256; nz = 256
   # read abyssal hill topography from file
-  b = reshape(h5read("abyssal_128x128.h5", "b"), (nx, ny, 1))
+  b = reshape(h5read("abyssal_256x256.h5", "b"), (nx, ny, 1))
   z = [(k-1)*Δz for i = 1:nx, j = 1:ny, k = 1:nz]
   # assign to padded array
   fluid = BitArray(undef, nx+2, ny+2, nz+2)
@@ -633,8 +624,66 @@ end
   h5write(filename, "ϕ", ϕs)
   h5write(filename, "b", bs)
   # screen print
-  println(@sprintf("%23s %6i %9.3e %9.3e %9.3e %9.3e", now(), n, n*2Δt, maximum(abs.(us[.!solid])), maximum(abs.(vs[.!solid])),
-                   maximum(abs.(ws[.!solid]))))
+  println(@sprintf("%s %6i %9.3e %9.3e %9.3e %9.3e", floor(now(), Second), n, n*4Δt,
+                   maximum(abs.(us[.!solid])), maximum(abs.(vs[.!solid])), maximum(abs.(ws[.!solid]))))
+end
+
+# load tile from file
+@everywhere function load_tile(n, i, j, k, maskx::Array{UInt8,3}, masky::Array{UInt8,3}, maskz::Array{UInt8,3},
+                              chan_send_w::RemoteChannel{Channel{Array{Float64,2}}},
+                              chan_send_e::RemoteChannel{Channel{Array{Float64,2}}},
+                              chan_send_s::RemoteChannel{Channel{Array{Float64,2}}},
+                              chan_send_n::RemoteChannel{Channel{Array{Float64,2}}},
+                              chan_send_b::RemoteChannel{Channel{Array{Float64,2}}},
+                              chan_send_t::RemoteChannel{Channel{Array{Float64,2}}},
+                              chan_receive_w::RemoteChannel{Channel{Array{Float64,2}}},
+                              chan_receive_e::RemoteChannel{Channel{Array{Float64,2}}},
+                              chan_receive_s::RemoteChannel{Channel{Array{Float64,2}}},
+                              chan_receive_n::RemoteChannel{Channel{Array{Float64,2}}},
+                              chan_receive_b::RemoteChannel{Channel{Array{Float64,2}}},
+                              chan_receive_t::RemoteChannel{Channel{Array{Float64,2}}})
+  # tile size
+  nx, ny, nz = size(maskx)
+  # initialize arrays
+  u = Array{Float64,3}(undef, nx, ny, nz)
+  v = Array{Float64,3}(undef, nx, ny, nz)
+  w = Array{Float64,3}(undef, nx, ny, nz)
+  ϕ = Array{Float64,3}(undef, nx, ny, nz)
+  b = Array{Float64,3}(undef, nx, ny, nz)
+  # load data
+  filename = @sprintf("data/%010d_%1d_%1d_%1d.h5", n, i, j, k)
+  u[2:nx-1,2:ny-1,2:nz-1] = h5read(filename, "u")
+  v[2:nx-1,2:ny-1,2:nz-1] = h5read(filename, "v")
+  w[2:nx-1,2:ny-1,2:nz-1] = h5read(filename, "w")
+  ϕ[2:nx-1,2:ny-1,2:nz-1] = h5read(filename, "ϕ")
+  b[2:nx-1,2:ny-1,2:nz-1] = h5read(filename, "b")
+  # replace missing values with zeros
+  solid = (maskx .== 0) .& (masky .== 0) .& (maskz .== 0)
+  u[solid] .= 0.
+  v[solid] .= 0.
+  w[solid] .= 0.
+  ϕ[solid] .= 0.
+  b[solid] .= 0.
+  # exchange edges with neighboring tiles
+  exchangex!(u, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+  exchangex!(v, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+  exchangex!(w, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+  exchangex!(ϕ, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+  exchangex!(b, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+  exchangey!(u, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+  exchangey!(v, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+  exchangey!(w, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+  exchangey!(ϕ, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+  exchangey!(b, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+  exchangez!(u, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+  exchangez!(v, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+  exchangez!(w, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+  exchangez!(ϕ, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+  exchangez!(b, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+  # screen print (should really be truncated fields)
+  println(@sprintf("%s %6i %9.3e %9.3e %9.3e %9.3e", floor(now(), Second), n, n*4Δt,
+                   maximum(abs.(u[.!solid])), maximum(abs.(v[.!solid])), maximum(abs.(w[.!solid]))))
+  return u, v, w, ϕ, b
 end
 
 # run model on tile
@@ -664,74 +713,134 @@ end
   maskx = maskx[irange[1]:irange[end]+2,jrange[1]:jrange[end]+2,krange[1]:krange[end]+2]
   masky = masky[irange[1]:irange[end]+2,jrange[1]:jrange[end]+2,krange[1]:krange[end]+2]
   maskz = maskz[irange[1]:irange[end]+2,jrange[1]:jrange[end]+2,krange[1]:krange[end]+2]
-  # save masks
-  h5write(@sprintf("data/masks_%1d_%1d_%1d.h5", i, j, k), "maskx", maskx[2:nx-1,2:ny-1,2:nz-1])
-  h5write(@sprintf("data/masks_%1d_%1d_%1d.h5", i, j, k), "masky", masky[2:nx-1,2:ny-1,2:nz-1])
-  h5write(@sprintf("data/masks_%1d_%1d_%1d.h5", i, j, k), "maskz", maskz[2:nx-1,2:ny-1,2:nz-1])
   # specify where Dirichlet boundary conditions are to be imposed
   diriu = .!maski
   diriv = .!maski
   diriw = .!maski
   dirib = falses(nx, ny, nz)
-  # initial conditions
-  u = zeros(nx, ny, nz)
-  v = zeros(nx, ny, nz)
-  w = zeros(nx, ny, nz)
-  ϕ = c^2*ones(nx, ny, nz)
-  b = zeros(nx, ny, nz)
-  # save initial conditions to file
-  save_tile(0, i, j, k, u, v, w, ϕ, b, maskx, masky, maskz)
+  # coordinate
+  z = [(k-1)*Δz for i = irange[1]-1:irange[end]+1, j = jrange[1]-1:jrange[end]+1, k = krange[1]-1:krange[end]+1]
+  if steps[1] == 1 # initialize
+    # save masks
+    h5write(@sprintf("data/masks_%1d_%1d_%1d.h5", i, j, k), "maskx", maskx[2:nx-1,2:ny-1,2:nz-1])
+    h5write(@sprintf("data/masks_%1d_%1d_%1d.h5", i, j, k), "masky", masky[2:nx-1,2:ny-1,2:nz-1])
+    h5write(@sprintf("data/masks_%1d_%1d_%1d.h5", i, j, k), "maskz", maskz[2:nx-1,2:ny-1,2:nz-1])
+    # initial conditions
+    u = zeros(nx, ny, nz)
+    v = zeros(nx, ny, nz)
+    w = zeros(nx, ny, nz)
+    N = 1e-3
+    b = N^2*z
+    ϕ = c^2 .+ 1/2*N^2*z.^2
+#    exchangex!(ϕ, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+#    exchangey!(ϕ, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+#    exchangez!(ϕ, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+#    exchangex!(b, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+#    exchangey!(b, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+#    exchangez!(b, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+    # save initial conditions to file
+    save_tile(0, i, j, k, u, v, w, ϕ, b, maskx, masky, maskz)
+  else # load
+    u, v, w, ϕ, b = load_tile(steps[1] - 1, i, j, k, maskx, masky, maskz, chan_send_w, chan_send_e, chan_send_s, chan_send_n, chan_send_b, chan_send_t, chan_receive_w, chan_receive_e, chan_receive_s, chan_receive_n, chan_receive_b, chan_receive_t)
+  end
   # time steps
   for n = steps
     # Strang splitting
     Dx!(u, maskx, diriu, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
     Dx!(v, maskx, diriv, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
     Dx!(w, maskx, diriw, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
-    Dx!(b, maskx, dirib, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e; flux=ν*N^2*sin(θ))
+    Dx!(b, maskx, dirib, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+
     Dy!(u, masky, diriu, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
     Dy!(v, masky, diriv, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
     Dy!(w, masky, diriw, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
     Dy!(b, masky, dirib, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+
     Dz!(u, maskz, diriu, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
     Dz!(v, maskz, diriv, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
     Dz!(w, maskz, diriw, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
-    Dz!(b, maskz, dirib, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t; flux=ν*N^2*cos(θ))
+    Dz!(b, maskz, dirib, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+
     Rx!(v, w, ϕ, maski, chan_send_s, chan_send_n, chan_send_b, chan_send_t,
         chan_receive_s, chan_receive_n, chan_receive_b, chan_receive_t)
     Ry!(u, w, ϕ, maski, chan_send_w, chan_send_e, chan_send_b, chan_send_t,
         chan_receive_w, chan_receive_e, chan_receive_b, chan_receive_t)
     Rz!(u, v, ϕ, maski, chan_send_w, chan_send_e, chan_send_s, chan_send_n,
         chan_receive_w, chan_receive_e, chan_receive_s, chan_receive_n)
-    Tx!(u, ϕ, b, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
-    Ty!(v, ϕ, b, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+
     Sx!(u, ϕ, b, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+    Tx!(u, ϕ, b, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+    Tx!(u, ϕ, b, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+    Sx!(u, ϕ, b, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+
     Sy!(v, ϕ, b, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+    Ty!(v, ϕ, b, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+    Ty!(v, ϕ, b, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+    Sy!(v, ϕ, b, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+
     Sz!(w, ϕ, b, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
     Tz!(w, ϕ, b, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
     Tz!(w, ϕ, b, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
     Sz!(w, ϕ, b, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+
+    Sz!(w, ϕ, b, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+    Tz!(w, ϕ, b, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+    Tz!(w, ϕ, b, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+    Sz!(w, ϕ, b, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+
     Sy!(v, ϕ, b, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
-    Sx!(u, ϕ, b, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
     Ty!(v, ϕ, b, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+    Ty!(v, ϕ, b, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+    Sy!(v, ϕ, b, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+
+    Sx!(u, ϕ, b, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
     Tx!(u, ϕ, b, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+    Tx!(u, ϕ, b, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+    Sx!(u, ϕ, b, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+
     Rz!(u, v, ϕ, maski, chan_send_w, chan_send_e, chan_send_s, chan_send_n,
         chan_receive_w, chan_receive_e, chan_receive_s, chan_receive_n)
     Ry!(u, w, ϕ, maski, chan_send_w, chan_send_e, chan_send_b, chan_send_t,
         chan_receive_w, chan_receive_e, chan_receive_b, chan_receive_t)
     Rx!(v, w, ϕ, maski, chan_send_s, chan_send_n, chan_send_b, chan_send_t,
         chan_receive_s, chan_receive_n, chan_receive_b, chan_receive_t)
+
     Dz!(u, maskz, diriu, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
     Dz!(v, maskz, diriv, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
     Dz!(w, maskz, diriw, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
-    Dz!(b, maskz, dirib, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t; flux=ν*N^2*cos(θ))
+    Dz!(b, maskz, dirib, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+
     Dy!(u, masky, diriu, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
     Dy!(v, masky, diriv, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
     Dy!(w, masky, diriw, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
     Dy!(b, masky, dirib, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+
     Dx!(u, maskx, diriu, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
     Dx!(v, maskx, diriv, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
     Dx!(w, maskx, diriw, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
-    Dx!(b, maskx, dirib, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e; flux=ν*N^2*sin(θ))
+    Dx!(b, maskx, dirib, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+
+#    println(mass(ϕ[2:nx-1,2:ny-1,2:nz-1],
+#                 maski[2:nx-1,2:ny-1,2:nz-1],
+#                 maskx[2:nx-1,2:ny-1,2:nz-1],
+#                 masky[2:nx-1,2:ny-1,2:nz-1],
+#                 maskz[2:nx-1,2:ny-1,2:nz-1]))
+#    println(energy(u[2:nx-1,2:ny-1,2:nz-1],
+#                   v[2:nx-1,2:ny-1,2:nz-1],
+#                   w[2:nx-1,2:ny-1,2:nz-1],
+#                   ϕ[2:nx-1,2:ny-1,2:nz-1],
+#                   b[2:nx-1,2:ny-1,2:nz-1],
+#                   z[2:nx-1,2:ny-1,2:nz-1],
+#                   maski[2:nx-1,2:ny-1,2:nz-1],
+#                   maskx[2:nx-1,2:ny-1,2:nz-1],
+#                   masky[2:nx-1,2:ny-1,2:nz-1],
+#                   maskz[2:nx-1,2:ny-1,2:nz-1]))
+#    println(buoyancy(ϕ[2:nx-1,2:ny-1,2:nz-1],
+#                     b[2:nx-1,2:ny-1,2:nz-1],
+#                     maski[2:nx-1,2:ny-1,2:nz-1],
+#                     maskx[2:nx-1,2:ny-1,2:nz-1],
+#                     masky[2:nx-1,2:ny-1,2:nz-1],
+#                     maskz[2:nx-1,2:ny-1,2:nz-1]))
     if n % 100 == 0
       # save tile to file
       save_tile(n, i, j, k, u, v, w, ϕ, b, maskx, masky, maskz)
@@ -780,4 +889,29 @@ function run_model(steps, tile_sizes)
                               chan_n[i,js,k], chan_s[i,jn,k], chan_t[i,j,kb], chan_b[i,j,kt])
     end
   end
+end
+
+# mass
+@everywhere function mass(ϕ, maski, maskx, masky, maskz)
+  maskb = (maskx .> 1) .| (masky .> 1) .| (maskz .> 1)
+  return sum(ϕ[maski])/c^2 + sum(ϕ[maskb])/2c^2
+end
+
+# energy
+@everywhere function energy(u, v, w, ϕ, b, z, maski, maskx, masky, maskz)
+  α = ϕ.*b/c^2
+  maskb = (maskx .> 1) .| (masky .> 1) .| (maskz .> 1)
+  return sum(u[maski].^2)/2 + sum(v[maski].^2)/2 + sum(w[maski].^2)/2μ^2 + sum(ϕ[maski].^2)/2c^2 + sum(ϕ[maskb].^2)/4c^2 - sum(α[maski].*z[maski]) - sum(α[maskb].*z[maskb])/2 - c^2*sum(maski)/2 - c^2*sum(maskb)/4
+end
+
+# buoyancy
+@everywhere function buoyancy(ϕ, b, maski, maskx, masky, maskz)
+  maskb = (maskx .> 1) .| (masky .> 1) .| (maskz .> 1)
+  return sum(ϕ[maski].*b[maski]) + sum(ϕ[maskb].*b[maskb])/2
+end
+
+# buoyancy variance
+@everywhere function buoyancy_variance(ϕ, b, maski, maskx, masky, maskz)
+  maskb = (maskx .> 1) .| (masky .> 1) .| (maskz .> 1)
+  return sum(ϕ[maski].*b[maski].^2) + sum(ϕ[maskb].*b[maskb].^2)/2
 end
