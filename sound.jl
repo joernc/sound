@@ -8,11 +8,12 @@
 @everywhere using Printf
 @everywhere using HDF5
 @everywhere using Dates
+@everywhere using Random
 
 # grid spacing
-@everywhere const Δx = 128.
+@everywhere const Δx = 80.
 @everywhere const Δy = Δx
-@everywhere const Δz = 1.
+@everywhere const Δz = 5.
 
 # inertial frequency
 @everywhere const f = -5e-5
@@ -26,45 +27,55 @@
 # aspect ratio
 @everywhere const μ = Δz/Δx
 
-@everywhere const datadir = "/central/groups/oceanphysics/smalldz"
+# directory for data storage
+@everywhere const datadir = "./data/std"
 
+# exchange of tile edges in x-direction
 @everywhere function exchangex!(a::Array{Float64,3},
                                 chan_send_w::RemoteChannel{Channel{Array{Float64,2}}},
                                 chan_send_e::RemoteChannel{Channel{Array{Float64,2}}},
                                 chan_receive_w::RemoteChannel{Channel{Array{Float64,2}}},
                                 chan_receive_e::RemoteChannel{Channel{Array{Float64,2}}})
-  # send edges
-  put!(chan_send_w, a[2,:,:])
-  put!(chan_send_e, a[end-1,:,:])
-  # receive edges
-  a[1,:,:] = take!(chan_receive_w)
-  a[end,:,:] = take!(chan_receive_e)
+  @inbounds begin
+    # send edges
+    put!(chan_send_w, a[2,:,:])
+    put!(chan_send_e, a[end-1,:,:])
+    # receive edges
+    a[1,:,:] = take!(chan_receive_w)
+    a[end,:,:] = take!(chan_receive_e)
+  end
 end
 
+# exchange of tile edges in y-direction
 @everywhere function exchangey!(a::Array{Float64,3},
                                 chan_send_s::RemoteChannel{Channel{Array{Float64,2}}},
                                 chan_send_n::RemoteChannel{Channel{Array{Float64,2}}},
                                 chan_receive_s::RemoteChannel{Channel{Array{Float64,2}}},
                                 chan_receive_n::RemoteChannel{Channel{Array{Float64,2}}})
-  # send edges
-  put!(chan_send_s, a[:,2,:])
-  put!(chan_send_n, a[:,end-1,:])
-  # receive edges
-  a[:,1,:] = take!(chan_receive_s)
-  a[:,end,:] = take!(chan_receive_n)
+  @inbounds begin
+    # send edges
+    put!(chan_send_s, a[:,2,:])
+    put!(chan_send_n, a[:,end-1,:])
+    # receive edges
+    a[:,1,:] = take!(chan_receive_s)
+    a[:,end,:] = take!(chan_receive_n)
+  end
 end
 
+# exchange of tile edges in z-direction
 @everywhere function exchangez!(a::Array{Float64,3},
                                 chan_send_b::RemoteChannel{Channel{Array{Float64,2}}},
                                 chan_send_t::RemoteChannel{Channel{Array{Float64,2}}},
                                 chan_receive_b::RemoteChannel{Channel{Array{Float64,2}}},
                                 chan_receive_t::RemoteChannel{Channel{Array{Float64,2}}})
-  # send edges
-  put!(chan_send_b, a[:,:,2])
-  put!(chan_send_t, a[:,:,end-1])
-  # receive edges
-  a[:,:,1] = take!(chan_receive_b)
-  a[:,:,end] = take!(chan_receive_t)
+  @inbounds begin
+    # send edges
+    put!(chan_send_b, a[:,:,2])
+    put!(chan_send_t, a[:,:,end-1])
+    # receive edges
+    a[:,:,1] = take!(chan_receive_b)
+    a[:,:,end] = take!(chan_receive_t)
+  end
 end
 
 # sound wave split (x-direction)
@@ -79,7 +90,7 @@ end
   up = copy(u)
   ϕp = copy(ϕ)
   # loop over grid points
-  for k = 1:nz, j = 1:ny, i = 2:nx-1
+  @inbounds for k = 1:nz, j = 1:ny, i = 2:nx-1
     if maskx[i,j,k] == 1 # interior
       u[i,j,k] = (up[i-1,j,k] + up[i+1,j,k])/2 + 1/2c*(ϕp[i-1,j,k] - ϕp[i+1,j,k])
       ϕ[i,j,k] = (ϕp[i-1,j,k] + ϕp[i+1,j,k])/2 + c/2*(up[i-1,j,k] - up[i+1,j,k])
@@ -108,7 +119,7 @@ end
   vp = copy(v)
   ϕp = copy(ϕ)
   # loop over grid points
-  for k = 1:nz, j = 2:ny-1, i = 1:nx
+  @inbounds for k = 1:nz, j = 2:ny-1, i = 1:nx
     if masky[i,j,k] == 1 # interior
       v[i,j,k] = (vp[i,j-1,k] + vp[i,j+1,k])/2 + 1/2c*(ϕp[i,j-1,k] - ϕp[i,j+1,k])
       ϕ[i,j,k] = (ϕp[i,j-1,k] + ϕp[i,j+1,k])/2 + c/2*(vp[i,j-1,k] - vp[i,j+1,k])
@@ -137,10 +148,10 @@ end
   wp = copy(w)
   ϕp = copy(ϕ)
   # loop over grid points
-  for k = 2:nz-1, j = 1:ny, i = 1:nx
+  @inbounds for k = 2:nz-1, j = 1:ny, i = 1:nx
     if maskz[i,j,k] == 1 # interior
-      w[i,j,k] = (wp[i,j,k-1] + wp[i,j,k+1])/2 + μ/2c*(ϕp[i,j,k-1] - ϕp[i,j,k+1])
-      ϕ[i,j,k] = (ϕp[i,j,k-1] + ϕp[i,j,k+1])/2 + c/2μ*(wp[i,j,k-1] - wp[i,j,k+1])
+      w[i,j,k] = 1/2*(wp[i,j,k-1] + wp[i,j,k+1]) + μ/2c*(ϕp[i,j,k-1] - ϕp[i,j,k+1])
+      ϕ[i,j,k] = 1/2*(ϕp[i,j,k-1] + ϕp[i,j,k+1]) + c/2μ*(wp[i,j,k-1] - wp[i,j,k+1])
     elseif maskz[i,j,k] == 2 # bottom boundary
       w[i,j,k] = 0.
       ϕ[i,j,k] = ϕp[i,j,k+1] - c/μ*wp[i,j,k+1]
@@ -154,161 +165,197 @@ end
   exchangez!(ϕ, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
 end
 
-@everywhere function Tx_rhs(u::Array{Float64,3}, ϕ::Array{Float64,3}, α::Array{Float64,3}, maskx::Array{UInt8,3},
-                            chan_send_w::RemoteChannel{Channel{Array{Float64,2}}},
-                            chan_send_e::RemoteChannel{Channel{Array{Float64,2}}},
-                            chan_receive_w::RemoteChannel{Channel{Array{Float64,2}}},
-                            chan_receive_e::RemoteChannel{Channel{Array{Float64,2}}})
+# sound wave split (x-direction)
+@everywhere function Tx_rhs!(u::Array{Float64,3}, ϕ::Array{Float64,3}, α::Array{Float64,3},
+                             kα::Array{Float64,3}, maskx::Array{UInt8,3},
+                             chan_send_w::RemoteChannel{Channel{Array{Float64,2}}},
+                             chan_send_e::RemoteChannel{Channel{Array{Float64,2}}},
+                             chan_receive_w::RemoteChannel{Channel{Array{Float64,2}}},
+                             chan_receive_e::RemoteChannel{Channel{Array{Float64,2}}})
   # tile size
   nx, ny, nz = size(u)
   # calculate b
   b = c^2*α./ϕ
-  # first step
-  kα = Array{Float64,3}(undef, nx, ny, nz)
   # loop over grid points
-  for k = 1:nz, j = 1:ny, i = 2:nx-1
+  @inbounds for k = 1:nz, j = 1:ny, i = 2:nx-1
     if maskx[i,j,k] == 1 # interior
-      kα[i,j,k] = 1/4Δx*((b[i-1,j,k] + b[i,j,k])*(u[i-1,j,k] + u[i,j,k]) - (b[i,j,k] + b[i+1,j,k])*(u[i,j,k] + u[i+1,j,k]))
+      kα[i,j,k] = Δt/4Δx*((b[i-1,j,k] + b[i,j,k])*(u[i-1,j,k] + u[i,j,k]) - (b[i,j,k] + b[i+1,j,k])*(u[i,j,k] + u[i+1,j,k]))
     elseif maskx[i,j,k] == 2 # western boundary
-      kα[i,j,k] = 1/2Δx*(-(b[i,j,k] + b[i+1,j,k])*u[i+1,j,k])
+      kα[i,j,k] = Δt/2Δx*(-(b[i,j,k] + b[i+1,j,k])*u[i+1,j,k])
     elseif maskx[i,j,k] == 3 # eastern boundary
-      kα[i,j,k] = 1/2Δx*((b[i-1,j,k] + b[i,j,k])*u[i-1,j,k])
+      kα[i,j,k] = Δt/2Δx*((b[i-1,j,k] + b[i,j,k])*u[i-1,j,k])
     else
       kα[i,j,k] = 0.
     end
   end
   # exchange with neighboring tiles
   exchangex!(kα, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
-  return Δt*kα
 end
 
-@everywhere function Ty_rhs(v::Array{Float64,3}, ϕ::Array{Float64,3}, α::Array{Float64,3}, masky::Array{UInt8,3},
-                            chan_send_s::RemoteChannel{Channel{Array{Float64,2}}},
-                            chan_send_n::RemoteChannel{Channel{Array{Float64,2}}},
-                            chan_receive_s::RemoteChannel{Channel{Array{Float64,2}}},
-                            chan_receive_n::RemoteChannel{Channel{Array{Float64,2}}})
+@everywhere function Ty_rhs!(v::Array{Float64,3}, ϕ::Array{Float64,3}, α::Array{Float64,3},
+                             kα::Array{Float64,3}, masky::Array{UInt8,3},
+                             chan_send_s::RemoteChannel{Channel{Array{Float64,2}}},
+                             chan_send_n::RemoteChannel{Channel{Array{Float64,2}}},
+                             chan_receive_s::RemoteChannel{Channel{Array{Float64,2}}},
+                             chan_receive_n::RemoteChannel{Channel{Array{Float64,2}}})
   # tile size
   nx, ny, nz = size(v)
   # calculate b
   b = c^2*α./ϕ
-  # first step
-  kα = Array{Float64,3}(undef, nx, ny, nz)
   # loop over grid points
-  for k = 1:nz, j = 2:ny-1, i = 1:nx
+  @inbounds for k = 1:nz, j = 2:ny-1, i = 1:nx
     if masky[i,j,k] == 1 # interior
-      kα[i,j,k] = 1/4Δy*((b[i,j-1,k] + b[i,j,k])*(v[i,j-1,k] + v[i,j,k]) - (b[i,j,k] + b[i,j+1,k])*(v[i,j,k] + v[i,j+1,k]))
+      kα[i,j,k] = Δt/4Δy*((b[i,j-1,k] + b[i,j,k])*(v[i,j-1,k] + v[i,j,k]) - (b[i,j,k] + b[i,j+1,k])*(v[i,j,k] + v[i,j+1,k]))
     elseif masky[i,j,k] == 2 # southern boundary
-      kα[i,j,k] = 1/2Δy*(-(b[i,j,k] + b[i,j+1,k])*v[i,j+1,k])
+      kα[i,j,k] = Δt/2Δy*(-(b[i,j,k] + b[i,j+1,k])*v[i,j+1,k])
     elseif masky[i,j,k] == 3 # northern boundary
-      kα[i,j,k] = 1/2Δy*((b[i,j-1,k] + b[i,j,k])*v[i,j-1,k])
+      kα[i,j,k] = Δt/2Δy*((b[i,j-1,k] + b[i,j,k])*v[i,j-1,k])
     else
       kα[i,j,k] = 0.
     end
   end
   # exchange with neighboring tiles
   exchangey!(kα, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
-  return Δt*kα
 end
 
-@everywhere function Tz_rhs(w::Array{Float64,3}, ϕ::Array{Float64,3}, α::Array{Float64,3}, maskz::Array{UInt8,3},
-                            chan_send_b::RemoteChannel{Channel{Array{Float64,2}}},
-                            chan_send_t::RemoteChannel{Channel{Array{Float64,2}}},
-                            chan_receive_b::RemoteChannel{Channel{Array{Float64,2}}},
-                            chan_receive_t::RemoteChannel{Channel{Array{Float64,2}}})
+@everywhere function Tz_rhs!(w::Array{Float64,3}, ϕ::Array{Float64,3}, α::Array{Float64,3},
+                             kα::Array{Float64,3}, kw::Array{Float64,3}, maskz::Array{UInt8,3},
+                             chan_send_b::RemoteChannel{Channel{Array{Float64,2}}},
+                             chan_send_t::RemoteChannel{Channel{Array{Float64,2}}},
+                             chan_receive_b::RemoteChannel{Channel{Array{Float64,2}}},
+                             chan_receive_t::RemoteChannel{Channel{Array{Float64,2}}})
   # tile size
   nx, ny, nz = size(w)
   # calculate b
   b = c^2*α./ϕ
-  # first step
-  kw = Array{Float64,3}(undef, nx, ny, nz)
-  kα = Array{Float64,3}(undef, nx, ny, nz)
   # loop over grid points
-  for k = 2:nz-1, j = 1:ny, i = 1:nx
+  @inbounds for k = 2:nz-1, j = 1:ny, i = 1:nx
     if maskz[i,j,k] == 1 # interior
-      kw[i,j,k] = μ^2/4*(b[i,j,k-1] + 2b[i,j,k] + b[i,j,k+1])
-      kα[i,j,k] = 1/4Δz*((b[i,j,k-1] + b[i,j,k])*(w[i,j,k-1] + w[i,j,k]) - (b[i,j,k] + b[i,j,k+1])*(w[i,j,k] + w[i,j,k+1]))
+      kα[i,j,k] = Δt/4Δz*((b[i,j,k-1] + b[i,j,k])*(w[i,j,k-1] + w[i,j,k]) - (b[i,j,k] + b[i,j,k+1])*(w[i,j,k] + w[i,j,k+1]))
+      kw[i,j,k] = Δt*μ^2/4*(b[i,j,k-1] + 2b[i,j,k] + b[i,j,k+1])
     elseif maskz[i,j,k] == 2 # bottom boundary
+      kα[i,j,k] = Δt/2Δz*(-(b[i,j,k] + b[i,j,k+1])*w[i,j,k+1])
       kw[i,j,k] = 0.
-      kα[i,j,k] = 1/2Δz*(-(b[i,j,k] + b[i,j,k+1])*w[i,j,k+1])
     elseif maskz[i,j,k] == 3 # top boundary
+      kα[i,j,k] = Δt/2Δz*((b[i,j,k-1] + b[i,j,k])*w[i,j,k-1])
       kw[i,j,k] = 0.
-      kα[i,j,k] = 1/2Δz*((b[i,j,k-1] + b[i,j,k])*w[i,j,k-1])
     else
-      kw[i,j,k] = 0.
       kα[i,j,k] = 0.
+      kw[i,j,k] = 0.
     end
   end
   # exchange with neighboring tiles
-  exchangez!(kw, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
   exchangez!(kα, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
-  return Δt*kw, Δt*kα
+  exchangez!(kw, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
 end
 
-# buoyancy split (x-direction, no gravity)
+# buoyancy split (x-direction)
 @everywhere function Tx!(u::Array{Float64,3}, ϕ::Array{Float64,3}, α::Array{Float64,3}, maskx::Array{UInt8,3},
                          chan_send_w::RemoteChannel{Channel{Array{Float64,2}}},
                          chan_send_e::RemoteChannel{Channel{Array{Float64,2}}},
                          chan_receive_w::RemoteChannel{Channel{Array{Float64,2}}},
                          chan_receive_e::RemoteChannel{Channel{Array{Float64,2}}})
+  # tile size
+  nx, ny, nz = size(u)
+#  # allocate
+#  kα = Array{Float64,3}(undef, nx, ny, nz)
 #  # perform Euler
-#  kα1 = Tx_rhs(u, ϕ, α, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
-#  α .+= kα1
+#  Tx_rhs!(u, ϕ, α, kα, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+#  α .+= kα
+  # allocate
+  kα1 = Array{Float64,3}(undef, nx, ny, nz)
+  kα2 = Array{Float64,3}(undef, nx, ny, nz)
   # perform midpoint
-  kα1 = Tx_rhs(u, ϕ, α, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
-  kα2 = Tx_rhs(u, ϕ, α + kα1/2, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+  Tx_rhs!(u, ϕ, α, kα1, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+  Tx_rhs!(u, ϕ, α + kα1/2, kα2, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
   α .+= kα2
+#  # allocate
+#  kα1 = Array{Float64,3}(undef, nx, ny, nz)
+#  kα2 = Array{Float64,3}(undef, nx, ny, nz)
+#  kα3 = Array{Float64,3}(undef, nx, ny, nz)
+#  kα4 = Array{Float64,3}(undef, nx, ny, nz)
 #  # perform RK4
-#  kα1 = Tx_rhs(u, ϕ, α, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
-#  kα2 = Tx_rhs(u, ϕ, α + kα1/2, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
-#  kα3 = Tx_rhs(u, ϕ, α + kα2/2, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
-#  kα4 = Tx_rhs(u, ϕ, α + kα3, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
-#  α .+= (kα1 + 2kα2 + 2kα3 + kα4)/6
-  return kα1
+#  Tx_rhs!(u, ϕ, α, kα1, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+#  Tx_rhs!(u, ϕ, α + kα1/2, kα2, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+#  Tx_rhs!(u, ϕ, α + kα2/2, kα3, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+#  Tx_rhs!(u, ϕ, α + kα3, kα4, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+#  α .+= 1/6*(kα1 + 2kα2 + 2kα3 + kα4)
 end
 
-# buoyancy split (y-direction, no gravity)
+# buoyancy split (y-direction)
 @everywhere function Ty!(v::Array{Float64,3}, ϕ::Array{Float64,3}, α::Array{Float64,3}, masky::Array{UInt8,3},
                          chan_send_s::RemoteChannel{Channel{Array{Float64,2}}},
                          chan_send_n::RemoteChannel{Channel{Array{Float64,2}}},
                          chan_receive_s::RemoteChannel{Channel{Array{Float64,2}}},
                          chan_receive_n::RemoteChannel{Channel{Array{Float64,2}}})
+  # tile size
+  nx, ny, nz = size(v)
+#  # allocate
+#  kα = Array{Float64,3}(undef, nx, ny, nz)
 #  # perform Euler
-#  kα1 = Ty_rhs(v, ϕ, α, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
-#  α .+= kα1
+#  Ty_rhs!(v, ϕ, α, kα, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+#  α .+= kα
+  # allocate
+  kα1 = Array{Float64,3}(undef, nx, ny, nz)
+  kα2 = Array{Float64,3}(undef, nx, ny, nz)
   # perform midpoint
-  kα1 = Ty_rhs(v, ϕ, α, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
-  kα2 = Ty_rhs(v, ϕ, α + kα1/2, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+  Ty_rhs!(v, ϕ, α, kα1, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+  Ty_rhs!(v, ϕ, α + kα1/2, kα2, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
   α .+= kα2
+#  # allocate
+#  kα1 = Array{Float64,3}(undef, nx, ny, nz)
+#  kα2 = Array{Float64,3}(undef, nx, ny, nz)
+#  kα3 = Array{Float64,3}(undef, nx, ny, nz)
+#  kα4 = Array{Float64,3}(undef, nx, ny, nz)
 #  # perform RK4
-#  kα1 = Ty_rhs(v, ϕ, α, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
-#  kα2 = Ty_rhs(v, ϕ, α + kα1/2, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
-#  kα3 = Ty_rhs(v, ϕ, α + kα2/2, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
-#  kα4 = Ty_rhs(v, ϕ, α + kα3, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
-#  α .+= (kα1 + 2kα2 + 2kα3 + kα4)/6
+#  Ty_rhs!(v, ϕ, α, kα1, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+#  Ty_rhs!(v, ϕ, α + kα1/2, kα2, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+#  Ty_rhs!(v, ϕ, α + kα2/2, kα3, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+#  Ty_rhs!(v, ϕ, α + kα3, kα4, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+#  α .+= 1/6*(kα1 + 2kα2 + 2kα3 + kα4)
 end
 
-# buoyancy split (z-direction, gravity)
+# buoyancy split (z-direction, advection and gravity)
 @everywhere function Tz!(w::Array{Float64,3}, ϕ::Array{Float64,3}, α::Array{Float64,3}, maskz::Array{UInt8,3},
-                         chan_send_b::RemoteChannel{Channel{Array{Float64,2}}},
-                         chan_send_t::RemoteChannel{Channel{Array{Float64,2}}},
-                         chan_receive_b::RemoteChannel{Channel{Array{Float64,2}}},
-                         chan_receive_t::RemoteChannel{Channel{Array{Float64,2}}})
+                          chan_send_b::RemoteChannel{Channel{Array{Float64,2}}},
+                          chan_send_t::RemoteChannel{Channel{Array{Float64,2}}},
+                          chan_receive_b::RemoteChannel{Channel{Array{Float64,2}}},
+                          chan_receive_t::RemoteChannel{Channel{Array{Float64,2}}})
+  # tile size
+  nx, ny, nz = size(w)
+#  # allocate
+#  kα = Array{Float64,3}(undef, nx, ny, nz)
+#  kw = Array{Float64,3}(undef, nx, ny, nz)
 #  # perform Euler
-#  kw1, kα1 = Tz_rhs(w, ϕ, α, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
-#  w .+= kw1
-#  α .+= kα1
+#  Tz_rhs!(w, ϕ, α, kα, kw, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+#  α .+= kα
+#  w .+= kw
+  # allocate
+  kα1 = Array{Float64,3}(undef, nx, ny, nz)
+  kα2 = Array{Float64,3}(undef, nx, ny, nz)
+  kw1 = Array{Float64,3}(undef, nx, ny, nz)
+  kw2 = Array{Float64,3}(undef, nx, ny, nz)
   # perform midpoint
-  kw1, kα1 = Tz_rhs(w, ϕ, α, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
-  kw2, kα2 = Tz_rhs(w + kw1/2, ϕ, α + kα1/2, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
-  w .+= kw2
+  Tz_rhs!(w, ϕ, α, kα1, kw1, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+  Tz_rhs!(w + kw1/2, ϕ, α + kα1/2, kα2, kw2, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
   α .+= kα2
+  w .+= kw2
+#  # allocate
+#  kα1 = Array{Float64,3}(undef, nx, ny, nz)
+#  kα2 = Array{Float64,3}(undef, nx, ny, nz)
+#  kα3 = Array{Float64,3}(undef, nx, ny, nz)
+#  kα4 = Array{Float64,3}(undef, nx, ny, nz)
+#  kw1 = Array{Float64,3}(undef, nx, ny, nz)
+#  kw2 = Array{Float64,3}(undef, nx, ny, nz)
+#  kw3 = Array{Float64,3}(undef, nx, ny, nz)
+#  kw4 = Array{Float64,3}(undef, nx, ny, nz)
 #  # perform RK4
-#  kw1, kα1 = Tz_rhs(w, ϕ, α, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
-#  kw2, kα2 = Tz_rhs(w + kw1/2, ϕ, α + kα1/2, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
-#  kw3, kα3 = Tz_rhs(w + kw2/2, ϕ, α + kα2/2, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
-#  kw4, kα4 = Tz_rhs(w + kw3, ϕ, α + kα3, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
-#  w .+= (kw1 + 2kw2 + 2kw3 + kw4)/6
-#  α .+= (kα1 + 2kα2 + 2kα3 + kα4)/6
+#  Tz_rhs!(w, ϕ, α, kα1, kw1, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+#  Tz_rhs!(w + kw1/2, ϕ, α + kα1/2, kα2, kw2, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+#  Tz_rhs!(w + kw2/2, ϕ, α + kα2/2, kα3, kw3, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+#  Tz_rhs!(w + kw3, ϕ, α + kα3, kα4, kw4, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+#  α .+= 1/6*(kα1 + 2kα2 + 2kα3 + kα4)
+#  w .+= 1/6*(kw1 + 2kw2 + 2kw3 + kw4)
 end
 
 # rotation split (in y–z plane)
@@ -327,10 +374,10 @@ end
   vp = copy(v)
   wp = copy(w)
   # loop over grid points
-  for k = 2:nz-1, j = 2:ny-1, i = 1:nx
+  @inbounds for k = 2:nz-1, j = 2:ny-1, i = 1:nx
     if maski[i,j,k] # interior
-      ωx = (wp[i,j+1,k] - wp[i,j-1,k])/2Δz - (vp[i,j,k+1] - vp[i,j,k-1])/2Δy # note switched Δ's
-      γx = ωx*Δt*c^2/ϕ[i,j,k]
+      ωx = 1/2Δz*(wp[i,j+1,k] - wp[i,j-1,k]) - 1/2Δy*(vp[i,j,k+1] - vp[i,j,k-1]) # note switched Δ's
+      γx = ωx*2Δt*c^2/ϕ[i,j,k]
       Cx = (1 - γx.^2/4)/(1 + γx^2/4)
       Sx = γx/(1 + γx^2/4)
       v[i,j,k] = vp[i,j,k]*Cx + wp[i,j,k]*Sx/μ
@@ -360,10 +407,10 @@ end
   up = copy(u)
   wp = copy(w)
   # loop over grid points
-  for k = 2:nz-1, j = 1:ny, i = 2:nx-1
+  @inbounds for k = 2:nz-1, j = 1:ny, i = 2:nx-1
     if maski[i,j,k] # interior
-      ωy = (up[i,j,k+1] - up[i,j,k-1])/2Δx - (wp[i+1,j,k] - wp[i-1,j,k])/2Δz # note switched Δ's
-      γy = ωy*Δt*c^2/ϕ[i,j,k]
+      ωy = 1/2Δx*(up[i,j,k+1] - up[i,j,k-1]) - 1/2Δz*(wp[i+1,j,k] - wp[i-1,j,k]) # note switched Δ's
+      γy = ωy*2Δt*c^2/ϕ[i,j,k]
       Cy = (1 - γy.^2/4)/(1 + γy^2/4)
       Sy = γy/(1 + γy^2/4)
       u[i,j,k] = up[i,j,k]*Cy - wp[i,j,k]*Sy/μ
@@ -393,10 +440,10 @@ end
   up = copy(u)
   vp = copy(v)
   # loop over grid points
-  for k = 1:nz, j = 2:ny-1, i = 2:nx-1
+  @inbounds for k = 1:nz, j = 2:ny-1, i = 2:nx-1
     if maski[i,j,k] # interior
-      ωz = f + (vp[i+1,j,k] - vp[i-1,j,k])/2Δx - (up[i,j+1,k] - up[i,j-1,k])/2Δy
-      γz = ωz*Δt*c^2/ϕ[i,j,k]
+      ωz = f + 1/2Δx*(vp[i+1,j,k] - vp[i-1,j,k]) - 1/2Δy*(up[i,j+1,k] - up[i,j-1,k])
+      γz = ωz*2Δt*c^2/ϕ[i,j,k]
       Cz = (1 - γz.^2/4)/(1 + γz^2/4)
       Sz = γz/(1 + γz^2/4)
       u[i,j,k] = up[i,j,k]*Cz + vp[i,j,k]*Sz
@@ -421,21 +468,21 @@ end
   # field at initial time
   ap = copy(a)
   # loop over grid points
-  for k = 1:nz, j = 1:ny, i = 2:nx-1
+  @inbounds for k = 1:nz, j = 1:ny, i = 2:nx-1
     if maskx[i,j,k] == 1 # interior
-      a[i,j,k] += Δt/μ^2*(ν[i,j,k]*(ap[i+1,j,k] - 2ap[i,j,k] + ap[i-1,j,k])/Δx^2
-                          + νx[i,j,k]*(ap[i+1,j,k] - ap[i-1,j,k])/2Δx)
+      a[i,j,k] += 2Δt/(μ^2*Δx^2)*ν[i,j,k]*(ap[i+1,j,k] - 2ap[i,j,k] + ap[i-1,j,k])
+                  + 2Δt/(μ^2*2Δx)*νx[i,j,k]*(ap[i+1,j,k] - ap[i-1,j,k])
     elseif maskx[i,j,k] == 2 # western boundary
       if diri[i,j,k] # Dirichlet BC
         a[i,j,k] = 0.
       else # Neumann BC
-        a[i,j,k] += 2Δt/μ^2*ν[i,j,k]*(ap[i+1,j,k] - ap[i,j,k])/Δx^2
+        a[i,j,k] += 4Δt/(μ^2*Δx^2)*ν[i,j,k]*(ap[i+1,j,k] - ap[i,j,k])
       end
     elseif maskx[i,j,k] == 3 # east boundary
       if diri[i,j,k] # Dirichlet BC
         a[i,j,k] = 0.
       else # Neumann BC
-        a[i,j,k] += 2Δt/μ^2*ν[i,j,k]*(-ap[i,j,k] + ap[i-1,j,k])/Δx^2
+        a[i,j,k] += 4Δt/(μ^2*Δx^2)*ν[i,j,k]*(-ap[i,j,k] + ap[i-1,j,k])
       end
     end
   end
@@ -454,21 +501,21 @@ end
   # field at initial time
   ap = copy(a)
   # loop over grid points
-  for k = 1:nz, j = 2:ny-1, i = 1:nx
+  @inbounds for k = 1:nz, j = 2:ny-1, i = 1:nx
     if masky[i,j,k] == 1 # interior
-      a[i,j,k] += Δt/μ^2*(ν[i,j,k]*(ap[i,j+1,k] - 2ap[i,j,k] + ap[i,j-1,k])/Δy^2
-                          + νy[i,j,k]*(ap[i,j+1,k] - ap[i,j-1,k])/2Δy)
+      a[i,j,k] += Δt/(μ^2*Δy^2)*ν[i,j,k]*(ap[i,j+1,k] - 2ap[i,j,k] + ap[i,j-1,k])
+                  + Δt/(μ^2*2Δy)*νy[i,j,k]*(ap[i,j+1,k] - ap[i,j-1,k])
     elseif masky[i,j,k] == 2 # southern boundary
       if diri[i,j,k] # Dirichlet BC
         a[i,j,k] = 0.
       else # Neumann BC
-        a[i,j,k] += 2Δt/μ^2*ν[i,j,k]*(ap[i,j+1,k] - ap[i,j,k])/Δy^2
+        a[i,j,k] += 2Δt/(μ^2*Δy^2)*ν[i,j,k]*(ap[i,j+1,k] - ap[i,j,k])
       end
     elseif masky[i,j,k] == 3 # northern boundary
       if diri[i,j,k] # Dirichlet BC
         a[i,j,k] = 0.
       else # Neumann BC
-        a[i,j,k] += 2Δt/μ^2*ν[i,j,k]*(-ap[i,j,k] + ap[i,j-1,k])/Δy^2
+        a[i,j,k] += 2Δt/(μ^2*Δy^2)*ν[i,j,k]*(-ap[i,j,k] + ap[i,j-1,k])
       end
     end
   end
@@ -487,21 +534,21 @@ end
   # field at initial time
   ap = copy(a)
   # loop over grid points
-  for k = 2:nz-1, j = 1:ny, i = 1:nx
+  @inbounds for k = 2:nz-1, j = 1:ny, i = 1:nx
     if maskz[i,j,k] == 1 # interior
-      a[i,j,k] += Δt*(ν[i,j,k]*(ap[i,j,k+1] - 2ap[i,j,k] + ap[i,j,k-1])/Δz^2
-                      + νz[i,j,k]*(ap[i,j,k+1] - ap[i,j,k-1])/2Δz)
+      a[i,j,k] += 2Δt/Δz^2*ν[i,j,k]*(ap[i,j,k+1] - 2ap[i,j,k] + ap[i,j,k-1])
+                  + 2Δt/2Δz*νz[i,j,k]*(ap[i,j,k+1] - ap[i,j,k-1])
     elseif maskz[i,j,k] == 2 # bottom boundary
       if diri[i,j,k] # Dirichlet BC
         a[i,j,k] = 0.
       else # Neumann BC
-        a[i,j,k] += 2Δt*ν[i,j,k]*(ap[i,j,k+1] - ap[i,j,k])/Δz^2
+        a[i,j,k] += 4Δt/Δz^2*ν[i,j,k]*(ap[i,j,k+1] - ap[i,j,k])
       end
     elseif maskz[i,j,k] == 3 # top boundary
       if diri[i,j,k] # Dirichlet BC
         a[i,j,k] = 0.
       else # Neumann BC
-        a[i,j,k] += 2Δt*ν[i,j,k]*(-ap[i,j,k] + ap[i,j,k-1])/Δz^2
+        a[i,j,k] += 4Δt/Δz^2*ν[i,j,k]*(-ap[i,j,k] + ap[i,j,k-1])
       end
     end
   end
@@ -522,11 +569,13 @@ end
 # read topography
 @everywhere function read_topo()
   # global domain size
-  nx = 256; ny = 256; nz = 1024
+  nx = 256; ny = 1; nz = 256
   # read abyssal hill topography from file
   z = [(k-.5)*Δz for i = 1:nx, j = 1:ny, k = 1:nz]
-  h = h5read("abyssal_256x256.h5", "h")
+  h = h5read("abyssal_256x1_80x80.h5", "h")
+  h .-= minimum(h)
   # find fluid points
+#  fluid = trues(nx+2, ny+2, nz+2)
   fluid = BitArray(undef, nx+2, ny+2, nz+2)
   fluid[2:end-1,2:end-1,2:end-1] = z .> h
   fluid[:,:,end-1] .= false
@@ -610,14 +659,20 @@ end
                                chan_receive_b::RemoteChannel{Channel{Array{Float64,2}}},
                                chan_receive_t::RemoteChannel{Channel{Array{Float64,2}}})
   # diffusion/viscosity parameters
-  ν0 = 1e-4 # 2m Ekman layer
-  ν1 = 2.5e-3 # 10m Ekman layer
-  d = 200. # 644m outer layer
+  ν0 = 1e-2
+#  ν1 = 2.5e-3 # 10m Ekman layer
+#  d = 200. # 644m outer layer
+#  H = (512-1)*Δz
+#  D = 50.
   # read topography
-  h = h5read("abyssal_256x256.h5", "h")[irange,jrange]
-  hx = h5read("abyssal_256x256.h5", "hx")[irange,jrange]
-  hy = h5read("abyssal_256x256.h5", "hy")[irange,jrange]
-  z = [(k-1)*Δz for i = irange, j = jrange, k = krange]
+#  h = h5read("abyssal_64x256_20x20.h5", "h")[irange,jrange]
+#  hx = h5read("abyssal_64x256_20x20.h5", "hx")[irange,jrange]
+#  hy = h5read("abyssal_64x256_20x20.h5", "hy")[irange,jrange]
+#  z = [(k-1)*Δz for i = irange, j = jrange, k = krange]
+#  x = [(i-.5)*Δx for i = irange, j = jrange]
+#  h = 500 .+ 400*sin.(2π*x/1e6)
+#  hx = 500 .+ 2π*400/1e6*cos.(2π*x/1e6)
+#  hy = zeros(size(hx))
   # tile size
   nx = length(irange)
   ny = length(jrange)
@@ -628,10 +683,10 @@ end
   νy = Array{Float64}(undef, nx+2, ny+2, nz+2)
   νz = Array{Float64}(undef, nx+2, ny+2, nz+2)
   # calculate viscosity and its gradients
-  ν[2:end-1,2:end-1,2:end-1] = ν0 .+ ν1*exp.(-(z.-h)/d)
-  νx[2:end-1,2:end-1,2:end-1] = ν1*hx/d.*exp.(-(z.-h)/d)
-  νy[2:end-1,2:end-1,2:end-1] = ν1*hy/d.*exp.(-(z.-h)/d)
-  νz[2:end-1,2:end-1,2:end-1] = -ν1/d.*exp.(-(z.-h)/d)
+  ν[2:end-1,2:end-1,2:end-1] .= ν0 #.+ ν1*exp.(-(z.-h)/d) #.+ ν1*exp.((z.-H)/D)
+  νx[2:end-1,2:end-1,2:end-1] .= 0. #ν1*hx/d.*exp.(-(z.-h)/d)
+  νy[2:end-1,2:end-1,2:end-1] .= 0. #ν1*hy/d.*exp.(-(z.-h)/d)
+  νz[2:end-1,2:end-1,2:end-1] .= 0. #-ν1/d.*exp.(-(z.-h)/d) #.+ ν1/D.*exp.((z.-H)/D)
   # exchange with neighboring tiles
   exchangex!(ν, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
   exchangex!(νx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
@@ -674,8 +729,13 @@ end
   h5write(filename, "ϕ", ϕs)
   h5write(filename, "α", αs)
   # screen print
-  println(@sprintf("%s %6i %9.3e %9.3e %9.3e %9.3e", floor(now(), Second), n, n*Δt,
-                   maximum(abs.(us[.!solid])), maximum(abs.(vs[.!solid])), maximum(abs.(ws[.!solid]))))
+  us[solid] .= 0.
+  vs[solid] .= 0.
+  ws[solid] .= 0.
+  ϕs[solid] .= 0.
+  αs[solid] .= 0.
+  println(@sprintf("%s %6i %9.3e %9.3e %9.3e %9.3e", floor(now(), Second), n, 4n*Δt,
+                   maximum(abs.(us)), maximum(abs.(vs)), maximum(abs.(ws))))
 end
 
 # load tile from file
@@ -731,8 +791,8 @@ end
   exchangez!(ϕ, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
   exchangez!(α, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
   # screen print (should really be truncated fields)
-  println(@sprintf("%s %6i %9.3e %9.3e %9.3e %9.3e", floor(now(), Second), n, n*Δt,
-                   maximum(abs.(u[.!solid])), maximum(abs.(v[.!solid])), maximum(abs.(w[.!solid]))))
+  println(@sprintf("%s %6i %9.3e %9.3e %9.3e %9.3e", floor(now(), Second), n, 4n*Δt,
+                   maximum(abs.(u)), maximum(abs.(v)), maximum(abs.(w))))
   return u, v, w, ϕ, α
 end
 
@@ -760,11 +820,12 @@ end
   # read viscosity/diffusivity maps
   ν, νx, νy, νz = read_visc(irange, jrange, krange, chan_send_w, chan_send_e, chan_send_s, chan_send_n, chan_send_b, chan_send_t,
                             chan_receive_w, chan_receive_e, chan_receive_s, chan_receive_n, chan_receive_b, chan_receive_t)
-  # specify where Dirichlet boundary conditions are to be imposed
+  # specify where to impose Dirichlet boundary conditions
   diriu = .!maski
   diriv = .!maski
   diriw = .!maski
-  diriα = falses(nx, ny, nz)
+  dirib = falses(nx, ny, nz)
+  diriϕ = falses(nx, ny, nz)
   # coordinates
   x = [(i-1)*Δy for i = irange[1]-1:irange[end]+1, j = jrange[1]-1:jrange[end]+1, k = krange[1]-1:krange[end]+1]
   y = [(j-1)*Δy for i = irange[1]-1:irange[end]+1, j = jrange[1]-1:jrange[end]+1, k = krange[1]-1:krange[end]+1]
@@ -776,12 +837,21 @@ end
     h5write(@sprintf("%s/masks_%1d_%1d_%1d.h5", datadir, i, j, k), "masky", masky[2:nx-1,2:ny-1,2:nz-1])
     h5write(@sprintf("%s/masks_%1d_%1d_%1d.h5", datadir, i, j, k), "maskz", maskz[2:nx-1,2:ny-1,2:nz-1])
     # initial conditions
-    u = zeros(nx, ny, nz)
+    u = zeros(nx, ny, nz) #1e-3*sin.(2π*(x+z)/32)
     v = zeros(nx, ny, nz)
-    w = zeros(nx, ny, nz)
+    w = zeros(nx, ny, nz) #-1e-3*sin.(2π*(x+z)/32)
     b = 1e-3^2*z
     ϕ = c^2*ones(nx, ny, nz) + 1e-3^2*z.^2/2
     α = ϕ.*b/c^2
+#    exchangex!(u, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+#    exchangey!(u, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+#    exchangez!(u, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+#    exchangex!(v, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+#    exchangey!(v, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+#    exchangez!(v, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+#    exchangex!(w, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+#    exchangey!(w, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+#    exchangez!(w, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
     # save initial conditions to file
     save_tile(0, i, j, k, u, v, w, ϕ, α, maskx, masky, maskz)
   else # load
@@ -791,21 +861,27 @@ end
   for n = steps
     
     # Strang splitting
+    
+    b = c^2*α./ϕ
 
-    Dx!(α, ν, νx, maskx, diriα, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+    Dx!(b, ν, νx, maskx, dirib, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
     Dx!(u, ν, νx, maskx, diriu, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
     Dx!(v, ν, νx, maskx, diriv, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
     Dx!(w, ν, νx, maskx, diriw, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+    Dx!(ϕ, ν, νx, maskx, diriϕ, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
 
-    Dy!(α, ν, νy, masky, diriα, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+    Dy!(b, ν, νy, masky, dirib, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
     Dy!(u, ν, νy, masky, diriu, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
     Dy!(v, ν, νy, masky, diriv, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
     Dy!(w, ν, νy, masky, diriw, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
 
-    Dz!(α, ν, νz, maskz, diriα, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+    Dz!(b, ν, νz, maskz, dirib, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
     Dz!(u, ν, νz, maskz, diriu, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
     Dz!(v, ν, νz, maskz, diriv, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
     Dz!(w, ν, νz, maskz, diriw, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+    Dz!(ϕ, ν, νz, maskz, diriϕ, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+
+    α = ϕ.*b/c^2
 
     Rx!(v, w, ϕ, maski, chan_send_s, chan_send_n, chan_send_b, chan_send_t,
         chan_receive_s, chan_receive_n, chan_receive_b, chan_receive_t)
@@ -816,15 +892,31 @@ end
 
     Sx!(u, ϕ, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
     Tx!(u, ϕ, α, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
-    Sy!(v, ϕ, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
-    Ty!(v, ϕ, α, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
-    Sz!(w, ϕ, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
-    Tz!(w, ϕ, α, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+    Tx!(u, ϕ, α, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+    Sx!(u, ϕ, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
 
-    Tz!(w, ϕ, α, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
-    Sz!(w, ϕ, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+    Sy!(v, ϕ, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+    Ty!(v, ϕ, α, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
     Ty!(v, ϕ, α, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
     Sy!(v, ϕ, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+
+    Sz!(w, ϕ, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+    Tz!(w, ϕ, α, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+    Tz!(w, ϕ, α, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+    Sz!(w, ϕ, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+
+    Sz!(w, ϕ, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+    Tz!(w, ϕ, α, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+    Tz!(w, ϕ, α, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+    Sz!(w, ϕ, maskz, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+
+    Sy!(v, ϕ, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+    Ty!(v, ϕ, α, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+    Ty!(v, ϕ, α, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+    Sy!(v, ϕ, masky, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+
+    Sx!(u, ϕ, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+    Tx!(u, ϕ, α, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
     Tx!(u, ϕ, α, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
     Sx!(u, ϕ, maskx, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
 
@@ -835,24 +927,32 @@ end
     Rx!(v, w, ϕ, maski, chan_send_s, chan_send_n, chan_send_b, chan_send_t,
         chan_receive_s, chan_receive_n, chan_receive_b, chan_receive_t)
 
+    b = c^2*α./ϕ
+
     Dz!(w, ν, νz, maskz, diriw, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
     Dz!(v, ν, νz, maskz, diriv, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
     Dz!(u, ν, νz, maskz, diriu, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
-    Dz!(α, ν, νz, maskz, diriα, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+    Dz!(b, ν, νz, maskz, dirib, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
+    Dz!(ϕ, ν, νz, maskz, diriϕ, chan_send_b, chan_send_t, chan_receive_b, chan_receive_t)
 
     Dy!(w, ν, νy, masky, diriw, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
     Dy!(v, ν, νy, masky, diriv, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
     Dy!(u, ν, νy, masky, diriu, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
-    Dy!(α, ν, νy, masky, diriα, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
+    Dy!(b, ν, νy, masky, dirib, chan_send_s, chan_send_n, chan_receive_s, chan_receive_n)
 
     Dx!(w, ν, νx, maskx, diriw, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
     Dx!(v, ν, νx, maskx, diriv, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
     Dx!(u, ν, νx, maskx, diriu, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
-    Dx!(α, ν, νx, maskx, diriα, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+    Dx!(b, ν, νx, maskx, dirib, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+    Dx!(ϕ, ν, νx, maskx, diriϕ, chan_send_w, chan_send_e, chan_receive_w, chan_receive_e)
+
+    α = ϕ.*b/c^2
 
     if n % 100 == 0
       # save tile to file
       save_tile(n, i, j, k, u, v, w, ϕ, α, maskx, masky, maskz)
+    else
+      println(@sprintf("%s %6i %9.3e", floor(now(), Second), n, 4n*Δt))
     end
   end
 end

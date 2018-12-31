@@ -2,28 +2,21 @@ using Printf
 using PyPlot
 using HDF5
 
-const Δx = 32768/512
+const Δx = 20.
 #const Δx = 2048/512
 const Δy = Δx
-const Δz = 1024/256
+const Δz = 1.
 
 #const f = -5.5e-5
 const f = -5e-5
 const N = 0.#1.3e-3
 const θ = 0.#2e-3
 
-const c = 2.
+const c = 1.
 
 const μ = Δz/Δx
 
-#const datadir = "/central/groups/oceanphysics/data_exp"
-#const datadir = "/central/groups/oceanphysics/test"
-#const datadir = "/central/groups/oceanphysics/noslope"
-#const datadir = "/central/groups/oceanphysics/doubleres"
-#const datadir = "/central/groups/oceanphysics/small"
-#const datadir = "/central/groups/oceanphysics/salmon"
-#const datadir = "/central/groups/oceanphysics/highvisc"
-const datadir = "/central/groups/oceanphysics/sztztzsz"
+const datadir = "/central/groups/oceanphysics/thin_20"
 
 pygui(false)
 rc("contour", negative_linestyle="solid")
