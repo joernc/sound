@@ -1,3 +1,4 @@
 *.mp4
 data_*
 slurm-*
+hostfile

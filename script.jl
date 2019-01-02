@@ -1,3 +1,3 @@
-include("sound.jl")
-tile_sizes = [64*ones(Int, 1), 64*ones(Int, 4), 64*ones(Int, 16)]
-run_model(7001:100000, tile_sizes)
+include("rev_sound.jl")
+tile_sizes = tile_sizes = [100*ones(Int, 8), 100*ones(Int, 8), 100*ones(Int, 2)]
+run_model(1:200, tile_sizes)
