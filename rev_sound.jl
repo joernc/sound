@@ -3,7 +3,7 @@
 
 # next steps:
 # - exchange all sides?
-# - note: rotational slips assume no-slip BC for now
+# - note: rotational splips assume no-slip BC for now
 # - allow stress BC (need to modify rotational split)
 
 @everywhere using Printf
@@ -12,9 +12,9 @@
 @everywhere using Random
 
 # grid spacing
-@everywhere const Δx = 1.25e3
-@everywhere const Δy = 1.25e3
-@everywhere const Δz = 10.
+@everywhere const Δx = 80.
+@everywhere const Δy = 80.
+@everywhere const Δz = 5.
 
 # inertial frequency
 @everywhere const f = 1e-4
@@ -32,20 +32,20 @@
 @everywhere const μ = Δz/Δx
 
 # directory for data storage
-@everywhere const datadir = "/central/groups/oceanphysics/seamount"
+@everywhere const datadir = "/central/groups/oceanphysics/overturn"
 
 @everywhere function topo()
   # global domain size
-  nx = 800; ny = 800
-#  # read abyssal hill topography from file
-#  h = h5read("abyssal_256x1_80x80.h5", "h")
-  # construct seamount
-  x = reshape((.5:nx-.5).*Δx, (nx, 1, 1))
-  y = reshape((.5:ny-.5).*Δy, (1, ny, 1))
-  H = 2000.
-  δ = 100e3
-  g(x, y) = 1 - exp(-(x^2+y^2)/2δ^2)
-  h = H/2*(1 .- g.(x.-nx/2*Δx, y.-ny/2*Δy))
+  nx = 256; ny = 256
+  # read abyssal hill topography from file
+  h = h5read("topo/abyssal_256x256_80x80.h5", "h")
+#  # construct seamount
+#  x = reshape((.5:nx-.5).*Δx, (nx, 1, 1))
+#  y = reshape((.5:ny-.5).*Δy, (1, ny, 1))
+#  H = 2000.
+#  δ = 100e3
+#  g(x, y) = 1 - exp(-(x^2+y^2)/2δ^2)
+#  h = H/2*(1 .- g.(x.-nx/2*Δx, y.-ny/2*Δy))
   return h
 end
 
@@ -536,7 +536,7 @@ end
   # find fluid points
   fluid = BitArray(undef, nx+2, ny+2, nz+2)
   fluid[2:end-1,2:end-1,2:end-1] = z .> h
-  if krange[end] == 200
+  if krange[end] == 256
     fluid[:,:,end-1] .= false
   end
   # exchange edges
@@ -748,8 +748,8 @@ end
     u[2:nx+1,2:ny+1,2:nz+1] .= 0.
     v[2:nx+1,2:ny+1,2:nz+1] .= 0.
     w[2:nx+1,2:ny+1,2:nz+1] .= 0.
-    b[2:nx+1,2:ny+1,2:nz+1] .= N^2*z
-    ϕ[2:nx+1,2:ny+1,2:nz+1] .= c^2 .+ 1/2*N^2*z.^2
+    b[2:nx+1,2:ny+1,2:nz+1] .= -N^2*z
+    ϕ[2:nx+1,2:ny+1,2:nz+1] .= c^2 .- 1/2*N^2*z.^2
     # exchange edges
     exchangex!(u, chan_send, chan_receive)
     exchangey!(u, chan_send, chan_receive)
