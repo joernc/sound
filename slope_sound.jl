@@ -22,6 +22,12 @@
 # inertial frequency
 @everywhere const f = 5e-5
 
+# background stratification
+@everywhere const N = 0.
+
+# slope angle
+@everywhere const θ = 0.
+
 # time step
 @everywhere const Δt = Δx/c
 
@@ -29,7 +35,7 @@
 @everywhere const μ = Δz/Δx
 
 # directory for data storage
-@everywhere const datadir = "/central/groups/oceanphysics/sound/canyon_test"
+@everywhere const datadir = "/central/groups/oceanphysics/canyon_2d_mvr_100"
 
 @everywhere function topo()
   # global domain size
@@ -155,7 +161,7 @@ end
 end
 
 @everywhere function Tx_rhs!(u::Array{Float64,3}, ϕ::Array{Float64,3}, α::Array{Float64,3},
-                             kα::Array{Float64,3}, maskx::Array{UInt8,3}, chan_send, chan_receive)
+                             ku::Array{Float64,3}, kα::Array{Float64,3}, maskx::Array{UInt8,3}, chan_send, chan_receive)
   # tile size
   nx, ny, nz = size(u)
   # calculate b
@@ -163,16 +169,31 @@ end
   # loop over grid points
   @inbounds for k = 1:nz, j = 1:ny, i = 2:nx-1
     if maskx[i,j,k] == 1 # interior
-      kα[i,j,k] = Δt/2Δx*((b[i-1,j,k] + b[i,j,k])*(u[i-1,j,k] + u[i,j,k]) - (b[i,j,k] + b[i+1,j,k])*(u[i,j,k] + u[i+1,j,k]))
+      ku[i,j,k] = Δt*sin(θ)/2*(b[i-1,j,k] + 2b[i,j,k] + b[i+1,j,k])
+      kα[i,j,k] = Δt*(1/2Δx*((b[i-1,j,k] + b[i,j,k])*(u[i-1,j,k] + u[i,j,k]) - (b[i,j,k] + b[i+1,j,k])*(u[i,j,k] + u[i+1,j,k]))
+                      - 1/2*(u[i-1,j,k] + 2u[i,j,k] + u[i+1,j,k])*N^2*sin(θ))
+#                      - 2u[i,j,k]*N^2*sin(θ))
     elseif maskx[i,j,k] == 2 # western boundary
-      kα[i,j,k] = -Δt/2Δx*(b[i,j,k] + b[i+1,j,k])*(u[i,j,k] + u[i+1,j,k])
+      ku[i,j,k] = Δt*sin(θ)/2*(b[i,j,k] + b[i+1,j,k])
+      kα[i,j,k] = Δt*(-1/2Δx*(b[i,j,k] + b[i+1,j,k])*(u[i,j,k] + u[i+1,j,k])
+                      - 1/2*(u[i,j,k] + u[i+1,j,k])*N^2*sin(θ))
+#                      - 2u[i,j,k]*N^2*sin(θ))
     elseif maskx[i,j,k] == 3 # eastern boundary
-      kα[i,j,k] = Δt/2Δx*(b[i-1,j,k] + b[i,j,k])*(u[i-1,j,k] + u[i,j,k])
+      ku[i,j,k] = Δt*sin(θ)/2*(b[i-1,j,k] + b[i,j,k])
+      kα[i,j,k] = Δt*(1/2Δx*(b[i-1,j,k] + b[i,j,k])*(u[i-1,j,k] + u[i,j,k])
+                      - 1/2*(u[i-1,j,k] + u[i,j,k])*N^2*sin(θ))
+#                      - 2u[i,j,k]*N^2*sin(θ))
+    elseif maskx[i,j,k] == 4 # boundaries on both sides
+      ku[i,j,k] = 0.
+      kα[i,j,k] = 0.
+#      kα[i,j,k] = -2Δt*u[i,j,k]*N^2*sin(θ)
     else
+      ku[i,j,k] = 0.
       kα[i,j,k] = 0.
     end
   end
   # exchange with neighboring tiles
+  exchangex!(ku, chan_send, chan_receive)
   exchangex!(kα, chan_send, chan_receive)
 end
 
@@ -208,13 +229,23 @@ end
   @inbounds for k = 2:nz-1, j = 1:ny, i = 1:nx
     if maskz[i,j,k] == 1 # interior
       kw[i,j,k] = Δt*μ^2/2*(b[i,j,k-1] + 2b[i,j,k] + b[i,j,k+1])
-      kα[i,j,k] = Δt/2Δz*((b[i,j,k-1] + b[i,j,k])*(w[i,j,k-1] + w[i,j,k]) - (b[i,j,k] + b[i,j,k+1])*(w[i,j,k] + w[i,j,k+1]))
+      kα[i,j,k] = Δt*(1/2Δz*((b[i,j,k-1] + b[i,j,k])*(w[i,j,k-1] + w[i,j,k]) - (b[i,j,k] + b[i,j,k+1])*(w[i,j,k] + w[i,j,k+1]))
+                      - 1/2*(w[i,j,k-1] + 2w[i,j,k] + w[i,j,k+1])*N^2*cos(θ))
+#                      - 2w[i,j,k]*N^2*cos(θ))
     elseif maskz[i,j,k] == 2 # bottom boundary
       kw[i,j,k] = Δt*μ^2/2*(b[i,j,k] + b[i,j,k+1])
-      kα[i,j,k] = -Δt/2Δz*(b[i,j,k] + b[i,j,k+1])*(w[i,j,k] + w[i,j,k+1])
+      kα[i,j,k] = Δt*(-1/2Δz*(b[i,j,k] + b[i,j,k+1])*(w[i,j,k] + w[i,j,k+1])
+                      - 1/2*(w[i,j,k] + w[i,j,k+1])*N^2*cos(θ))
+#                      - 2w[i,j,k]*N^2*cos(θ))
     elseif maskz[i,j,k] == 3 # top boundary
       kw[i,j,k] = Δt*μ^2/2*(b[i,j,k-1] + b[i,j,k])
-      kα[i,j,k] = Δt/2Δz*(b[i,j,k-1] + b[i,j,k])*(w[i,j,k-1] + w[i,j,k])
+      kα[i,j,k] = Δt*(1/2Δz*(b[i,j,k-1] + b[i,j,k])*(w[i,j,k-1] + w[i,j,k])
+                      - 1/2*(w[i,j,k-1] + w[i,j,k])*N^2*cos(θ))
+#                      - 2w[i,j,k]*N^2*cos(θ))
+    elseif maskz[i,j,k] == 4 # boundaries on both sides
+      kw[i,j,k] = 0.
+      kα[i,j,k] = 0.
+#      kα[i,j,k] = -2Δt*w[i,j,k]*N^2*cos(θ)
     else
       kw[i,j,k] = 0.
       kα[i,j,k] = 0.
@@ -231,11 +262,14 @@ end
   # tile size
   nx, ny, nz = size(u)
   # allocate
+  ku1 = Array{Float64,3}(undef, nx, ny, nz)
+  ku2 = Array{Float64,3}(undef, nx, ny, nz)
   kα1 = Array{Float64,3}(undef, nx, ny, nz)
   kα2 = Array{Float64,3}(undef, nx, ny, nz)
   # perform midpoint
-  Tx_rhs!(u, ϕ, α, kα1, maskx, chan_send, chan_receive)
-  Tx_rhs!(u, ϕ, α + kα1/2, kα2, maskx, chan_send, chan_receive)
+  Tx_rhs!(u, ϕ, α, ku1, kα1, maskx, chan_send, chan_receive)
+  Tx_rhs!(u + ku1/2, ϕ, α + kα1/2, ku2, kα2, maskx, chan_send, chan_receive)
+  u .+= ku2
   α .+= kα2
 end
 
@@ -299,7 +333,7 @@ end
       else # boundaries on both sides
         vz = 0.
       end
-      γx = 2Δt*c^2/μ*(wy - μ^2*vz)/ϕ[i,j,k]
+      γx = Δt*c^2/μ*(wy - μ^2*vz)/ϕ[i,j,k]
       Cx = (1 - 1/4*γx.^2)/(1 + 1/4*γx^2)
       Sx = γx/(1 + 1/4*γx^2)
       v[i,j,k] = vp[i,j,k]*Cx + 1/μ*wp[i,j,k]*Sx
@@ -342,7 +376,7 @@ end
       else # boundaries on both sides
         wx = 0.
       end
-      γy = 2Δt*c^2/μ*(μ^2*uz - wx)/ϕ[i,j,k]
+      γy = Δt*c^2/μ*(μ^2*uz - wx)/ϕ[i,j,k]
       Cy = (1 - 1/4*γy.^2)/(1 + 1/4*γy^2)
       Sy = γy/(1 + 1/4*γy^2)
       u[i,j,k] = up[i,j,k]*Cy - 1/μ*wp[i,j,k]*Sy
@@ -385,7 +419,7 @@ end
       else # boundaries on both sides
         uy = 0.
       end
-      γz = 2Δt*c^2*(f + vx - uy)/ϕ[i,j,k]
+      γz = Δt*c^2*(f + vx - uy)/ϕ[i,j,k]
       Cz = (1 - 1/4*γz.^2)/(1 + 1/4*γz^2)
       Sz = γz/(1 + 1/4*γz^2)
       u[i,j,k] = up[i,j,k]*Cz + vp[i,j,k]*Sz
@@ -437,13 +471,15 @@ end
       if diri # Dirichlet BC
         a[i,j,k] -= Δt/Δz^2*((κ[i-1,j,k] + κ[i,j,k])*2ap[i,j,k] + (κ[i,j,k] + κ[i+1,j,k])*(ap[i,j,k] - ap[i+1,j,k]))
       else # Neumann BC
-        a[i,j,k] -= Δt/Δz^2*(κ[i,j,k] + κ[i+1,j,k])*(ap[i,j,k] - ap[i+1,j,k])
+        a[i,j,k] += Δt/Δz^2*((κ[i-1,j,k] + κ[i,j,k])*N^2*sin(θ)*Δx - (κ[i,j,k] + κ[i+1,j,k])*(ap[i,j,k] - ap[i+1,j,k]))
+        #a[i,j,k] -= Δt/Δz^2*(κ[i,j,k] + κ[i+1,j,k])*(ap[i,j,k] - ap[i+1,j,k])
       end
     elseif maskx[i,j,k] == 3 # eastern boundary
       if diri
         a[i,j,k] += Δt/Δz^2*((κ[i-1,j,k] + κ[i,j,k])*(ap[i-1,j,k] - ap[i,j,k]) - (κ[i,j,k] + κ[i+1,j,k])*2ap[i,j,k])
       else
-        a[i,j,k] += Δt/Δz^2*(κ[i-1,j,k] + κ[i,j,k])*(ap[i-1,j,k] - ap[i,j,k])
+        #a[i,j,k] += Δt/Δz^2*(κ[i-1,j,k] + κ[i,j,k])*(ap[i-1,j,k] - ap[i,j,k])
+        a[i,j,k] += Δt/Δz^2*((κ[i-1,j,k] + κ[i,j,k])*(ap[i-1,j,k] - ap[i,j,k]) - (κ[i,j,k] + κ[i+1,j,k])*N^2*sin(θ)*Δx)
       end
     elseif maskx[i,j,k] == 4 # boundaries on both sides
       if diri
@@ -501,7 +537,8 @@ end
       if diri
         a[i,j,k] -= Δt/Δz^2*((κ[i,j,k-1] + κ[i,j,k])*2ap[i,j,k] + (κ[i,j,k] + κ[i,j,k+1])*(ap[i,j,k] - ap[i,j,k+1]))
       else
-        a[i,j,k] -= Δt/Δz^2*(κ[i,j,k] + κ[i,j,k+1])*(ap[i,j,k] - ap[i,j,k+1])
+        a[i,j,k] += Δt/Δz^2*((κ[i,j,k-1] + κ[i,j,k])*N^2*cos(θ)*Δz - (κ[i,j,k] + κ[i,j,k+1])*(ap[i,j,k] - ap[i,j,k+1]))
+        #a[i,j,k] -= Δt/Δz^2*(κ[i,j,k] + κ[i,j,k+1])*(ap[i,j,k] - ap[i,j,k+1])
       end
     elseif maskz[i,j,k] == 3 # top boundary
       if diri
@@ -716,6 +753,12 @@ end
   maskx, masky, maskz = masks(fluid, irange, jrange, krange, chan_send, chan_receive)
   # read viscosity/diffusivity maps
   ν = def_visc(irange, jrange, krange, chan_send, chan_receive)
+#  # specify where to impose Dirichlet boundary conditions
+#  diriu = .!maski
+#  diriv = .!maski
+#  diriw = .!maski
+#  dirib = falses(nx, ny, nz)
+#  diriϕ = falses(nx, ny, nz)
   if steps[1] == 1 # initialize
     # tile size
     nx = length(irange); ny = length(jrange); nz = length(krange)
@@ -785,24 +828,41 @@ end
     Dz!(b, ν, maskz, false, chan_send, chan_receive)
     
     # rotation
-    Rx!(v, w, ϕ, masky, maskz, chan_send, chan_receive)
-    Ry!(u, w, ϕ, maskx, maskz, chan_send, chan_receive)
-    Rz!(u, v, ϕ, maskx, masky, chan_send, chan_receive)
+#    Rx!(v, w, ϕ, masky, maskz, chan_send, chan_receive)
+#    Ry!(u, w, ϕ, maskx, maskz, chan_send, chan_receive)
+#    Rz!(u, v, ϕ, maskx, masky, chan_send, chan_receive)
 
     # sound and buoyancy
     α = ϕ.*b/c^2
+    Rx!(v, w, ϕ, masky, maskz, chan_send, chan_receive)
     STSx!(u, ϕ, α, maskx, chan_send, chan_receive)
+    Rx!(v, w, ϕ, masky, maskz, chan_send, chan_receive)
+
+    Ry!(u, w, ϕ, maskx, maskz, chan_send, chan_receive)
     STSy!(v, ϕ, α, masky, chan_send, chan_receive)
+    Ry!(u, w, ϕ, maskx, maskz, chan_send, chan_receive)
+
+    Rz!(u, v, ϕ, maskx, masky, chan_send, chan_receive)
     STSz!(w, ϕ, α, maskz, chan_send, chan_receive)
+    Rz!(u, v, ϕ, maskx, masky, chan_send, chan_receive)
+
+    Rz!(u, v, ϕ, maskx, masky, chan_send, chan_receive)
     STSz!(w, ϕ, α, maskz, chan_send, chan_receive)
+    Rz!(u, v, ϕ, maskx, masky, chan_send, chan_receive)
+
+    Ry!(u, w, ϕ, maskx, maskz, chan_send, chan_receive)
     STSy!(v, ϕ, α, masky, chan_send, chan_receive)
+    Ry!(u, w, ϕ, maskx, maskz, chan_send, chan_receive)
+
+    Rx!(v, w, ϕ, masky, maskz, chan_send, chan_receive)
     STSx!(u, ϕ, α, maskx, chan_send, chan_receive)
+    Rx!(v, w, ϕ, masky, maskz, chan_send, chan_receive)
     b = c^2*α./ϕ
 
     # rotation
-    Rz!(u, v, ϕ, maskx, masky, chan_send, chan_receive)
-    Ry!(u, w, ϕ, maskx, maskz, chan_send, chan_receive)
-    Rx!(v, w, ϕ, masky, maskz, chan_send, chan_receive)
+#    Rz!(u, v, ϕ, maskx, masky, chan_send, chan_receive)
+#    Ry!(u, w, ϕ, maskx, maskz, chan_send, chan_receive)
+#    Rx!(v, w, ϕ, masky, maskz, chan_send, chan_receive)
 
     # b-diffusion
     Dz!(b, ν, maskz, false, chan_send, chan_receive)

@@ -1,5 +1,29 @@
+using PyPlot
 using HDF5
 using Printf
+
+const N = 1e-3
+const θ = 2e-3
+
+#const nx = 256
+#const ny = 256
+#const nz = 256
+
+#const Δx = 390.625
+#const Δy = 390.625
+#const Δz = 7.8125
+
+const nx = 1
+const ny = 1000
+const nz = 600
+
+const Δx = 100.
+const Δy = 100.
+const Δz = 2.5
+
+x = reshape((.5:nx-.5).*Δx, (nx, 1, 1))
+y = reshape((.5:ny-.5).*Δy, (1, ny, 1))
+z = reshape((.5:nz-.5).*Δz, (1, 1, nz))
 
 # get index ranges for tiles
 tile_range(i, j, k, tile_sizes) = [sum(tile_sizes[1][1:i-1])+1:sum(tile_sizes[1][1:i]),
